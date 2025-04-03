@@ -4,11 +4,11 @@
 An AI-powered combat assistant module for Pathfinder 2e (PF2e) in Foundry Virtual Tabletop.  
 This tool analyzes the full combat state and recommends the best action for any creature on their turn—PCs or NPCs—automatically considering:
 
-- All usable **actions**, **reactions**, **spells**, **items**, and **feats**
+- All usable **actions**, **reactions**, **spells**, **items**, **feats**, **passives**
 - The creature’s **current state** (HP, conditions, resources, effects)
-- **Enemies**, **allies**, **initiative order**, **positioning**, and more
+- **Enemies**, **allies**, **positioning**, and more
 
-Designed for **GMs who want smarter, faster combat** or for **players who want guidance**, the assistant runs any creature competently—even ones you've never seen before.
+Designed for **GMs who want smarter, faster combat** or for **players who want guidance**, the assistant runs **any*** creature competently—even optimally.
 
 ---
 
@@ -19,7 +19,7 @@ Designed for **GMs who want smarter, faster combat** or for **players who want g
 - ✅ Supports player characters, NPCs, monsters, and summons
 - ✅ Tracks and uses actions, spell slots, MAP, cooldowns, and conditions
 - ✅ Offers flexible GM control: skip, confirm, override, or steer behavior
-- ✅ Optional per-creature instructions to customize behavior
+- ✅ Optional per-player instructions to customize behavior
 - ✅ Rich rationale and turn summaries for every decision
 
 ---
