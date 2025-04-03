@@ -1,0 +1,68 @@
+/* AI Designation Setup Chat Message Styling */
+.chat-message .ai-designation-setup ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.chat-message .ai-designation-setup .ai-designation-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px dashed #ccc;
+    padding: 4px 2px;
+    margin-bottom: 2px;
+}
+
+.chat-message .ai-designation-setup .ai-combatant-info {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+    margin-right: 10px;
+    min-width: 0; /* Prevents overflow issues */
+}
+
+.chat-message .ai-designation-setup .ai-combatant-info img {
+    vertical-align: middle;
+    margin-right: 5px;
+    border: none;
+    flex-shrink: 0;
+    width: 24px; /* Explicit width */
+    height: 24px; /* Explicit height */
+}
+
+.chat-message .ai-designation-setup .ai-combatant-info strong {
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-message .ai-designation-setup .ai-designation-buttons {
+    flex-shrink: 0;
+}
+
+.chat-message .ai-designation-setup .ai-designate-toggle-btn {
+    min-width: 80px;   /* Adjust as needed */
+    padding: 3px 6px;  /* Adjust padding */
+    font-size: 0.9em;
+    margin-left: 3px;
+    line-height: 1.4;
+    height: auto;
+    border-radius: 3px;
+    border: 1px solid #666;
+}
+
+.chat-message .ai-designation-setup .ai-confirm-designations {
+    margin-top: 8px;
+}
+
+/* Style for suggestion messages */
+.chat-message .message-content > div[style*="border: 1px solid #ccc;"] {
+  border-radius: 3px;
+}
+.chat-message .message-content button[class*="ai-"] {
+    margin: 3px 2px;
+    padding: 2px 5px;
+    font-size: 0.9em;
+}
