@@ -51,7 +51,7 @@ This module analyzes the full game state and suggests the best possible action f
 ### 4. Choose to Use the AI Assistant
 ![Accept AI prompt](media/accept-ai.png)
 
-### 5. Follow the Suggested Action
+### 5. Follow the Suggested Action (Press Confirm when Finished)
 ![AI action suggestion](media/action-suggestion.png)
 
 ### 6. Continue Acting Until the Turn Ends
