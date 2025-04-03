@@ -68,7 +68,7 @@ Select each token and click the **Toggle Combat State** icon to add them to the 
 
 ### 2. Assign Designations
 
-When combat begins, assign each combatant as **Friendly** or **Enemy**. The AI uses this to prioritize tactics.
+When combat begins, assign each combatant as **Friendly** or **Enemy**.
 
 
 You can also assign designations **mid-combat** when new creatures are added.  
@@ -97,11 +97,14 @@ At the start of a turn, you’ll be prompted to let the AI assist.
 
 ### 5. Follow or Skip Suggestions
 
-Each suggestion includes a recommended action and a short explanation. Click:
+Each suggestion includes a recommended action and a short explanation.
 
-- **Confirm** to execute
-- **Skip** to get a new suggestion
-- **End Turn** if done
+You are responsible for **executing the suggested action manually** in Foundry (e.g. clicking Strike, Cast, or using an Item).  
+Once you've done that, click:
+
+- ✅ **Confirm** to proceed to the next suggestion
+- 🔁 **Skip** to reject and get a different suggestion
+- ⏹ You may **End Turn** if the creature is done
 
 ![AI action suggestion](media/action-suggestion.png)
 
@@ -140,7 +143,7 @@ At the end of the turn, the system generates a **narrative summary** using the c
 ![Adjust MAP manually](media/adjust-map.png)
 
 - It tracks every action, spell, ability, item, and effect a creature has—PC or NPC.
-- Works even if you've never seen the creature before.
+- Run any creature competently (even optimally) with minimal prep.
 
 ![Casting example](media/vision-of-death.png)  
 ![Narrative summary](media/dragon-turn-summary.png)
