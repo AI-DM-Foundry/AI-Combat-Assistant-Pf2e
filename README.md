@@ -1,6 +1,8 @@
 
 # PF2e AI Combat Assistant for Foundry VTT
 
+![Next suggestion](media/next-suggestion.png)
+
 An AI-powered combat assistant module for Pathfinder 2e (PF2e) in Foundry Virtual Tabletop.  
 This tool analyzes the full combat state and recommends the best action for any creature on their turn—PCs or NPCs—automatically considering:
 
