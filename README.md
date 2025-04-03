@@ -2,26 +2,35 @@
 # PF2e AI Combat Assistant for Foundry VTT
 
 An AI-powered combat assistant module for Pathfinder 2e (PF2e) in Foundry Virtual Tabletop.  
-This module analyzes the full game state and suggests the best possible action for any creature on their turn, taking into account:
+This tool analyzes the full combat state and recommends the best action for any creature on their turn—PCs or NPCs—automatically considering:
 
-- Enemies and allies
-- Current conditions and active effects
-- All available actions, spells, and items
-- Tactical positioning, initiative, and status effects
+- All usable **actions**, **reactions**, **spells**, **items**, and **feats**
+- The creature’s **current state** (HP, conditions, resources, effects)
+- **Enemies**, **allies**, **initiative order**, **positioning**, and more
+
+Designed for **GMs who want smarter, faster combat** or for **players who want guidance**, the assistant runs any creature competently—even ones you've never seen before.
+
+---
 
 ## Features
 
-- Smart tactical suggestions for both PCs and NPCs
-- Deep rules-aware integration with PF2e mechanics
-- Real-time analysis of combat state
-- Supports context-sensitive actions, spells, items, reactions, and more
-- Allows persistent per-character AI instructions
-- Accepts temporary per-turn instructions to guide behavior
+- ✅ Tactical suggestions based on the full Foundry combat state
+- ✅ Rules-aware logic using PF2e-specific traits and keywords
+- ✅ Supports player characters, NPCs, monsters, and summons
+- ✅ Tracks and uses actions, spell slots, MAP, cooldowns, and conditions
+- ✅ Offers flexible GM control: skip, confirm, override, or steer behavior
+- ✅ Optional per-creature instructions to customize behavior
+- ✅ Rich rationale and turn summaries for every decision
+
+---
 
 ## Requirements
 
 - Foundry VTT **v12+**
-- Pathfinder 2e system installed
+- Pathfinder Second Edition (PF2e) game system installed
+- An API key for a supported LLM provider (e.g. OpenAI)
+
+---
 
 ## Installation
 
@@ -30,50 +39,130 @@ This module analyzes the full game state and suggests the best possible action f
    ```
    C:\Users\<YourName>\AppData\Local\FoundryVTT\Data\modules\
    ```
-3. Ensure the folder is named `pf2e-ai-combat-assistant`
-4. Launch Foundry VTT, go to **Configuration > Manage Modules**
-5. Enable **PF2e AI Combat Assistant** in your game world
+3. Ensure the folder is named `pf2e-ai-combat-assistant`.
+4. Launch Foundry VTT and enable **PF2e AI Combat Assistant** under Game Settings > Manage Modules.
+
+---
 
 ## 📘 How to Use
 
 ### 0. Set Up the LLM Connection
+
+Before use, go to **Game Settings > PF2e AI Combat Assistant** and configure your LLM:
+
+- Enter your **API key**
+- Choose the **endpoint** (e.g. OpenAI’s chat endpoint)
+- Set a **model name** (e.g. `gpt-4o`)
+
 ![LLM setup screen](media/llm-setup.png)
 
-### 1. Add All Creatures to Combat
+---
+
+### 1. Add Creatures to Combat
+
+Select each token and click the **Toggle Combat State** icon to add them to the tracker.
+
 ![Add creatures to combat](media/add-to-combat.png)
 
-### 2. Assign Friendly and Enemy Designations
+---
+
+### 2. Assign Designations
+
+When combat begins, assign each combatant as **Friendly** or **Enemy**. The AI uses this to prioritize tactics.
+
+
+You can also assign designations **mid-combat** when new creatures are added.  
+The system will prompt you to assign Friendly or Enemy roles as needed to keep tactics accurate.
+
+
 ![Assign Friend/Enemy](media/assign-designations.png)
 
-### 3. Roll Initiatives and Begin the Encounter
+---
+
+### 3. Roll Initiative and Start
+
+Roll initiative as usual, then click **Begin Encounter**.
+
 ![Begin Encounter](media/begin-encounter.png)
 
-### 4. Choose to Use the AI Assistant
+---
+
+### 4. Choose to Use AI Suggestions
+
+At the start of a turn, you’ll be prompted to let the AI assist.
+
 ![Accept AI prompt](media/accept-ai.png)
 
-### 5. Follow the Suggested Action
+---
+
+### 5. Follow or Skip Suggestions
+
+Each suggestion includes a recommended action and a short explanation. Click:
+
+- **Confirm** to execute
+- **Skip** to get a new suggestion
+- **End Turn** if done
+
 ![AI action suggestion](media/action-suggestion.png)
 
-### 6. Continue Acting Until the Turn Ends
+---
+
+### 6. Continue Until Turn End
+
+The AI provides new suggestions after each confirmation. It automatically tracks the creature’s action count.
+
 ![Next suggestion](media/next-suggestion.png)
 
-### 7. Execute the Suggested Strike, Spell, or Item
+---
+
+### 7. Strikes, Spells, and Items
+
+When actions involve clickable Foundry elements (like attacks or spells), you’ll get linked buttons.  
+Be sure to target the correct token in Foundry before clicking Strike or Cast.
+
 ![Linked strike example](media/linked-strike.png)
 
-### 8. Review the Turn Summary
+---
+
+### 8. Turn Summary
+
+At the end of the turn, the system generates a **narrative summary** using the chat log to determine which actions succeeded.
+
 ![Turn summary](media/turn-summary.png)
 
-## 🧠 Why It Matters: Run Any Creature With Confidence
+---
+
+## 🧠 Behind the Scenes
+
+- The system auto-increments **Multiple Attack Penalty (MAP)** after each attack with the `Attack` trait.
+- You can manually override the MAP if needed at any time:
+  
+![Adjust MAP manually](media/adjust-map.png)
+
+- It tracks every action, spell, ability, item, and effect a creature has—PC or NPC.
+- Works even if you've never seen the creature before.
+
 ![Casting example](media/vision-of-death.png)  
 ![Narrative summary](media/dragon-turn-summary.png)
 
-## ⚙️ Advanced Tips
+---
 
-### Adjust MAP Manually
-![Adjust MAP manually](media/adjust-map.png)
+## ✍️ Advanced Features
 
-### Use Manual Notes for Smarter Suggestions
+### Manual Notes
+
+You can provide extra context (e.g. resistances, tactics, special terrain) via notes before the next suggestion.
+
 ![Manual note example](media/manual-note.png)
 
-### Add Permanent Notes to Player Characters
+---
+
+### Permanent PC Notes
+
+For PCs, click **AI Notes** on their sheet to define behavior that is always applied—great for describing combat roles or special tactics.
+
 ![Permanent AI notes](media/permanent-notes.png)
+
+---
+
+Let me know if you have feature requests or bugs to report!
