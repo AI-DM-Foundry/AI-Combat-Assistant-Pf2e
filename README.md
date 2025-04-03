@@ -10,7 +10,7 @@ This tool analyzes the full combat state and recommends the best action for any 
 - The creature’s **current state** (HP, conditions, resources, effects)
 - **Enemies**, **allies**, **positioning**, and more
 
-Designed for **GMs who want smarter, faster combat** or for **players who want guidance**, the assistant runs **any*** creature competently—even optimally.
+Designed for **GMs who want smarter, faster combat** or for **players who want guidance**, the assistant runs **any** creature competently—even optimally.
 
 ---
 
