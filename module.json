@@ -3,6 +3,8 @@
   "title": "PF2e AI Combat Assistant",
   "description": "Suggests NPC enemy actions in combat using an LLM, requiring manual execution and confirmation.",
   "version": "0.3.1",
+  "download": "https://github.com/AI-DM-Foundry/AI-Combat-Assistant-Pf2e/releases/download/1.0/pf2e-ai-combat-assistant.zip",
+  "manifest": "https://github.com/AI-DM-Foundry/AI-Combat-Assistant-Pf2e/releases/download/latest/module.json",
   "compatibility": {
     "minimum": "12",
     "verified": "12"
@@ -38,7 +40,5 @@
       "path": "lang/en.json"
     }
   ],
-  "manifest": "",
-  "download": "",
-  "url": ""
+  "url": "https://github.com/AI-DM-Foundry/AI-Combat-Assistant-Pf2e"
 }
