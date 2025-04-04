@@ -139,7 +139,7 @@ At the end of the turn, the system generates a **narrative summary** using the c
 
 ## 🧠 Behind the Scenes
 
-- The system auto-increments **Multiple Attack Penalty (MAP)** after each attack with the `Attack` trait.
+- The system auto-increments **Multiple Attack Penalty (MAP)** after confirming an action with the `Attack` trait.
 - You can manually override the MAP if needed at any time:
   
 ![Adjust MAP manually](media/adjust-map.png)
