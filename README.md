@@ -69,7 +69,7 @@ Select each token and click the **Toggle Combat State** icon to add them to the 
 
 ---
 
-### 2. Assign Designations
+### 2. Assign Designations (As of 1.04, Friendly/Foe designation has been moved to the Combat Tracker.)
 
 When combat begins, assign each combatant as **Friendly** or **Enemy**.
 
