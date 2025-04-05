@@ -863,10 +863,7 @@ Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
 
     // Skip offer if the actor has an active player owner and the setting is GM-only
     const hasActivePlayerOwner = actor.hasPlayerOwner && game.users.some(user => user.active && actor.testUserPermission(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER));
-<<<<<<< Updated upstream
-=======
     console.debug(`AI DEBUG | Actor: ${actor.name}, hasPlayerOwner: ${actor.hasPlayerOwner}, Calculated hasActivePlayerOwner: ${hasActivePlayerOwner}, showOfferToPlayers: ${game.settings.get(MODULE_ID, 'showOfferToPlayers')}, isGM: ${game.user.isGM}`); // DEBUG
->>>>>>> Stashed changes
     if (hasActivePlayerOwner && !game.settings.get(MODULE_ID, 'showOfferToPlayers') && !game.user.isGM) {
         console.debug(`AI DEBUG | updateCombat Hook exiting: Offer skipped (Player ${game.user.name} owns token, GM-only setting, user is not GM).`); // DEBUG
         return; // Player owns this token, GM-only setting, player is not GM -> no offer shown to this player
@@ -5846,10 +5843,7 @@ function registerSettings() {
     game.settings.register(MODULE_ID, 'aiModel', { name: 'LLM Model Name', hint: 'The specific model identifier to use (e.g., gpt-4o, gpt-3.5-turbo, local model ID).', scope: 'world', config: true, type: String, default: 'gpt-4o' });
     game.settings.register(MODULE_ID, 'showOfferToPlayers', { name: 'Show AI Offer/Suggestions to Players?', hint: 'If checked, players who own the current actor (or all players if no owner) will see the AI turn offer and suggestion messages. If unchecked, only the GM sees these messages.', scope: 'world', config: true, type: Boolean, default: false });
     game.settings.register(MODULE_ID, 'includeReactionsInPrompt', { name: "Include Reactions in Prompt", hint: "Include Reaction abilities in the list sent to the AI for consideration.", scope: "world", config: true, type: Boolean, default: true });
-<<<<<<< Updated upstream
-=======
     game.settings.register(MODULE_ID, 'deleteDesignationMessageOnConfirm', { name: "Delete Designation Message on Confirm?", hint: "If checked, the 'AI Designation Setup' chat message will be automatically deleted after you click 'Confirm Designations'.", scope: 'world', config: true, type: Boolean, default: false });
->>>>>>> Stashed changes
 
     // Setting: Whisper Turn Summary to GM Only
     game.settings.register(MODULE_ID, 'whisperTurnSummary', {
