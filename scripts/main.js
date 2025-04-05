@@ -16,7 +16,6 @@ const FLAGS = {
     IS_PROCESSING: 'isProcessing',         // Is AI currently handling turn? (on Actor)
     CACHED_STRIKES: 'cachedStrikes',       // Detailed strike data gathered at turn start (on Actor)
     OFFER_ID: 'offerId',                   // Unique ID for AI turn offer messages (on ChatMessage)
-    DESIGNATION_MSG_ID: 'designationMsgId',    // Unique ID for the designation setup message (on ChatMessage)
     TEMP_THINKING: 'pf2eArenaAi_tempThinking', // Temporary flag for deleting "Thinking..." messages (on ChatMessage)
     MANUAL_NOTES_INPUT_ID: 'manualNotesInputId', // Unique ID for manual input field (on ChatMessage)
     PERMANENT_NOTES: 'permanentNotes',         // Stores permanent player notes for the AI (on Actor)
@@ -666,55 +665,38 @@ Hooks.once('ready', () => {
     registerSettings();
     console.log("PF2e AI Combat Assistant | Settings Initialized");
 });
-/**
- * Posts or updates the AI Designation Setup message for a given combat.
- * Finds and deletes any previous designation message for the same combat before posting a new one.
- * @param {Combat} combat - The combat encounter document.
- */
-async function postOrUpdateDesignationMessage(combat) {
-    if (!combat) {
-        console.warn("AI DEBUG | postOrUpdateDesignationMessage called with null combat.");
+
+Hooks.on('createCombat', async (combat, options, userId) => {
+    console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook fired. Combat ID: ${combat?.id}, User ID: ${userId}, Is GM: ${game.user.isGM}`);
+    if (!game.user.isGM || (userId && userId !== game.userId)) {
+        console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook exiting early. Not GM or not the triggering user.`);
         return;
     }
-    console.debug(`AI DEBUG | postOrUpdateDesignationMessage triggered for Combat ID: ${combat.id}`);
-
-    // Allow combatant data to potentially update after creation/deletion
-    await new Promise(resolve => setTimeout(resolve, 100));
-
+    // console.log(`PF2e AI Combat Assistant | createCombat hook fired for Combat ${combat.id}`); // DEBUG
+    await new Promise(resolve => setTimeout(resolve, 250)); // Allow combatants to populate
     const combatants = combat.combatants?.contents;
     if (!combatants || combatants.length === 0) {
-        console.debug(`AI DEBUG | postOrUpdateDesignationMessage: No combatants found in combat ${combat.id}. Skipping message post.`);
-        // Optionally delete existing message if combat is now empty
-        const existingMsgId = `designation-${combat.id}`;
-        const existingMsg = game.messages.find(m => m.flags?.[MODULE_ID]?.[FLAGS.DESIGNATION_MSG_ID] === existingMsgId);
-        if (existingMsg) {
-            console.debug(`AI DEBUG | postOrUpdateDesignationMessage: Deleting existing designation message for empty combat ${combat.id}.`);
-            try { await existingMsg.delete(); } catch (e) { console.error("Error deleting old designation message:", e); }
-        }
+        console.warn("PF2e AI Combat Assistant | DEBUG: No combatants found in new combat. Exiting createCombat hook.");
         return;
-    }
+    } // DEBUG
 
-    // Build the list of combatants for the message
+    // console.log(`PF2e AI Combat Assistant | Found ${combatants.length} combatants for designation setup.`); // DEBUG
     let combatantListHtml = '<ul style="list-style: none; padding: 0; margin: 0;">';
-    const currentDesignations = combat.getFlag(MODULE_ID, FLAGS.DESIGNATIONS) || {}; // Get existing designations
-
     combatants.forEach(combatant => {
-        const designation = currentDesignations[combatant.id] || 'enemy'; // Default to enemy if not set
-        const isFriendly = designation === 'friendly';
-        const icon = isFriendly ? 'fa-heart' : 'fa-skull-crossbones';
-        const color = isFriendly ? 'lightgreen' : 'salmon';
-        const text = isFriendly ? 'Friendly' : 'Enemy';
-
+        // Default everyone to enemy initially for easier setup in most cases
+        const initialDesignation = 'enemy';
+        const initialIcon = 'fa-skull-crossbones';
+        const initialColor = 'salmon';
         combatantListHtml += `
             <li style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px dashed #ccc; padding: 4px 2px;"
-                data-combatant-entry-id="${combatant.id}" data-ai-current-designation="${designation}">
+                data-combatant-entry-id="${combatant.id}" data-ai-current-designation="${initialDesignation}">
                 <div class="ai-combatant-info" style="display: flex; align-items: center; flex-grow: 1; margin-right: 10px;">
                     <img src="${combatant.img || CONST.DEFAULT_TOKEN}" width="24" height="24" style="vertical-align: middle; margin-right: 5px; border: none; flex-shrink: 0;">
                     <strong style="vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${combatant.name}">${combatant.name || 'Unknown Name'}</strong>
                 </div>
                 <div class="ai-designation-buttons" style="flex-shrink: 0;">
-                    <button class="ai-designate-toggle-btn" data-combatant-id="${combatant.id}" title="Toggle AI Designation (Friendly/Enemy)" style="min-width: 80px; background-color: ${color};">
-                        <i class="fas ${icon}"></i> ${text}
+                    <button class="ai-designate-toggle-btn" data-combatant-id="${combatant.id}" title="Toggle AI Designation (Friendly/Enemy)" style="min-width: 80px; background-color: ${initialColor};">
+                        <i class="fas ${initialIcon}"></i> ${initialDesignation.charAt(0).toUpperCase() + initialDesignation.slice(1)}
                     </button>
                 </div>
             </li>`;
@@ -728,71 +710,35 @@ async function postOrUpdateDesignationMessage(combat) {
             <button class="ai-confirm-designations" title="Save Designations to Combat"><i class="fas fa-save"></i> Confirm Designations</button>
         </div>`;
 
-    const uniqueDesignationMsgId = `designation-${combat.id}`;
-
-    // Find and delete the previous designation message for this combat, if it exists
-    const existingMessage = game.messages.find(m => m.flags?.[MODULE_ID]?.[FLAGS.DESIGNATION_MSG_ID] === uniqueDesignationMsgId);
-    if (existingMessage) {
-        console.debug(`AI DEBUG | postOrUpdateDesignationMessage: Found existing designation message ${existingMessage.id} for combat ${combat.id}. Deleting.`);
-        try {
-            await existingMessage.delete();
-        } catch (deleteError) {
-            console.error(`PF2e AI Combat Assistant | Failed to delete previous designation message ${existingMessage.id}:`, deleteError);
-        }
-    } else {
-         console.debug(`AI DEBUG | postOrUpdateDesignationMessage: No existing designation message found for combat ${combat.id}.`);
-    }
-
-    // Create the new message (only if there's an active GM)
+    console.log(`PF2e AI Combat Assistant | DEBUG: Preparing to create designation setup message for Combat ID: ${combat.id}`);
     if (game.users.activeGM) {
+        console.log(`PF2e AI Combat Assistant | DEBUG: Active GM found. Proceeding to create message.`);
         try {
-            console.debug(`AI DEBUG | postOrUpdateDesignationMessage: Attempting to create new designation setup message for combat ${combat.id}.`);
             await ChatMessage.create({
                 speaker: { alias: "AI Setup" },
                 content: setupContent,
-                whisper: ChatMessage.getWhisperRecipients("GM"),
-                flags: { [MODULE_ID]: { [FLAGS.DESIGNATION_MSG_ID]: uniqueDesignationMsgId } } // Add the unique ID flag
+                whisper: ChatMessage.getWhisperRecipients("GM")
             });
-            console.debug(`AI DEBUG | postOrUpdateDesignationMessage: Designation setup message created successfully for combat ${combat.id}.`);
+            console.log(`PF2e AI Combat Assistant | DEBUG: Successfully created designation setup message for Combat ID: ${combat.id}.`);
+            // console.log(`PF2e AI Combat Assistant | Designation setup message posted for combat ${combat.id}.`); // DEBUG
         } catch (error) {
-            console.error(`PF2e AI Combat Assistant | Failed to create designation setup message for combat ${combat.id}:`, error);
+            console.error(`PF2e AI Combat Assistant | DEBUG: Failed to create designation setup message for Combat ID: ${combat.id}:`, error);
         }
     } else {
-        console.warn(`AI DEBUG | postOrUpdateDesignationMessage: No active GM found to send designation setup message for combat ${combat.id}.`);
+        console.warn(`PF2e AI Combat Assistant | DEBUG: No active GM found to send designation setup message for Combat ID: ${combat.id}.`);
     }
-}
-
-
-Hooks.on('createCombat', async (combat, options, userId) => {
-    console.debug(`AI DEBUG | createCombat Hook triggered. Combat ID: ${combat.id}, User ID: ${userId}, Is GM: ${game.user.isGM}`); // DEBUG
-    // Only GM should handle this
-    if (!game.user.isGM || (userId && userId !== game.userId)) {
-         console.debug(`AI DEBUG | createCombat Hook exiting: Not GM or triggered by another user.`); // DEBUG
-        return;
-    }
-    // Post the initial designation message
-    await postOrUpdateDesignationMessage(combat);
+    console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook finished for Combat ID: ${combat.id}`);
 });
 
 Hooks.on('createCombatant', async (combatant, options, userId) => {
     // Only GM should handle this setup prompt
-    console.debug(`AI DEBUG | createCombatant Hook triggered for Combatant: ${combatant?.name}, Combat ID: ${combatant?.combat?.id}, User ID: ${userId}, Is GM: ${game.user.isGM}`); // DEBUG
-    if (!game.user.isGM || (userId && userId !== game.userId)) {
-        console.debug(`AI DEBUG | createCombatant Hook exiting: Not GM or triggered by another user.`); // DEBUG
-        return;
-    }
+    if (!game.user.isGM || (userId && userId !== game.userId)) return;
 
     const combat = combatant.combat;
     // Only prompt if the combat is already active/started
-    console.debug(`AI DEBUG | createCombatant: Checking conditions - Combat Exists: ${!!combat}, Combat Started: ${combat?.started}, Combatant Actor Exists: ${!!combatant?.actor}`); // DEBUG
-    // TODO: Re-evaluate if combat.started check is correct here. Maybe prompt even if not started?
-    if (!combat || !combat.started || !combatant?.actor) {
-         console.debug(`AI DEBUG | createCombatant Hook exiting: Combat missing, not started, or combatant lacks actor.`); // DEBUG
-        return;
-    }
+    if (!combat || !combat.started || !combatant?.actor) return;
 
-    console.debug(`AI DEBUG | createCombatant: Conditions met for ${combatant.name} in Combat ${combat.id}. Currently NO action taken here.`); // DEBUG
-    // TODO: Add logic here to potentially re-trigger or update the designation message.
+    // console.log(`PF2e AI Combat Assistant | createCombatant hook fired for ${combatant.name} in active Combat ${combat.id}`); // DEBUG
     await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
 
     // Get existing designations, default to enemy if not set
@@ -826,11 +772,7 @@ Hooks.on('createCombatant', async (combatant, options, userId) => {
 
 Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
     // Check if the turn or round changed in an active combat
-    console.debug(`AI DEBUG | updateCombat Hook triggered. Combat started: ${combat.started}, Update Data:`, updateData); // DEBUG
-    if (!combat.started || (updateData.turn === undefined && updateData.round === undefined)) {
-        console.debug(`AI DEBUG | updateCombat Hook exiting: Combat not started or no turn/round update.`); // DEBUG
-        return;
-    }
+    if (!combat.started || (updateData.turn === undefined && updateData.round === undefined)) return;
     // Ignore trivial updates (like initiative changes outside of turn/round advance)
     if (options?.diff === false && options?.advanceTime === 0) return;
 
@@ -853,35 +795,27 @@ Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
     }
 
     // --- Offer AI control for the current combatant ---
-    console.debug(`AI DEBUG | Current Combatant: ${currentCombatant?.name}, Actor Exists: ${!!currentCombatant?.actor}`); // DEBUG
-    if (!currentCombatant?.actor) {
-        console.debug(`AI DEBUG | updateCombat Hook exiting: No actor found for current combatant.`); // DEBUG
-        return; // No actor for the current turn
-    }
+    if (!currentCombatant?.actor) return; // No actor for the current turn
 
     const actor = currentCombatant.actor;
 
     // Skip offer if the actor has an active player owner and the setting is GM-only
     const hasActivePlayerOwner = actor.hasPlayerOwner && game.users.some(user => user.active && actor.testUserPermission(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER));
-    console.debug(`AI DEBUG | Actor: ${actor.name}, hasPlayerOwner: ${actor.hasPlayerOwner}, Calculated hasActivePlayerOwner: ${hasActivePlayerOwner}, showOfferToPlayers: ${game.settings.get(MODULE_ID, 'showOfferToPlayers')}, isGM: ${game.user.isGM}`); // DEBUG
     if (hasActivePlayerOwner && !game.settings.get(MODULE_ID, 'showOfferToPlayers') && !game.user.isGM) {
-        console.debug(`AI DEBUG | updateCombat Hook exiting: Offer skipped (Player ${game.user.name} owns token, GM-only setting, user is not GM).`); // DEBUG
+        // console.log(`AI Offer Skipped: Player ${game.user.name} has owner, GM-only setting active.`); // DEBUG
         return; // Player owns this token, GM-only setting, player is not GM -> no offer shown to this player
     }
     if (!hasActivePlayerOwner && !game.user.isGM) {
-        console.debug(`AI DEBUG | updateCombat Hook exiting: Offer skipped (Player ${game.user.name} does not own NPC, GM-only setting).`); // DEBUG
+        // console.log(`AI Offer Skipped: Player ${game.user.name} does not own NPC, GM-only setting active.`); // DEBUG
         return; // Player does not own token, GM-only setting active -> no offer shown to this player
     }
 
     // Generate a unique ID for this specific turn's offer to prevent duplicates
     const uniqueOfferId = `ai-offer-${combat.id}-${combat.round}-${combat.turn}`;
-    console.debug(`AI DEBUG | Generated uniqueOfferId: ${uniqueOfferId}`); // DEBUG
 
     // Check if an offer message with this ID already exists
-    const existingMessage = game.messages.find(message => message.flags?.[MODULE_ID]?.[FLAGS.OFFER_ID] === uniqueOfferId);
-    console.debug(`AI DEBUG | Checking for existing message with ID ${uniqueOfferId}. Found: ${!!existingMessage}`); // DEBUG
-    if (existingMessage) {
-        console.debug(`AI DEBUG | updateCombat Hook exiting: AI Offer message for turn ${uniqueOfferId} already exists.`); // DEBUG
+    if (game.messages.some(message => message.flags?.[MODULE_ID]?.[FLAGS.OFFER_ID] === uniqueOfferId)) {
+        // console.log(`PF2e AI Combat Assistant | AI Offer for ${currentCombatant.name}'s turn already exists. Skipping.`); // DEBUG
         return;
     }
 
@@ -895,14 +829,12 @@ Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
         </div>`;
 
     try {
-        console.debug(`AI DEBUG | Attempting to create AI offer chat message for ${currentCombatant.name}...`); // DEBUG
         await ChatMessage.create({
             speaker: ChatMessage.getSpeaker({ token: currentCombatant.token || actor.prototypeToken }),
             content: offerContent,
             whisper: getWhisperRecipientsOffer(), // Respect setting for who sees the offer
             flags: { [MODULE_ID]: { [FLAGS.OFFER_ID]: uniqueOfferId } } // Add the unique ID flag
         });
-        console.debug(`AI DEBUG | AI offer chat message created successfully for ${currentCombatant.name}.`); // DEBUG
     } catch (chatError) {
         console.error(`PF2e AI Combat Assistant | Failed to create AI offer message:`, chatError);
     }
@@ -1028,10 +960,6 @@ async function _onConfirmDesignationsClick(event) {
     const button = $(event.currentTarget);
     const container = button.closest('.ai-designation-setup');
     const combatId = container.data('combatId');
-    if (!combatId) {
-        console.error("AI Assistant | Could not find combatId on designation setup container for toggle.");
-        return; // Cannot proceed without combat ID
-    }
     const combat = game.combats.get(combatId);
 
     if (!combat) {
@@ -5843,7 +5771,6 @@ function registerSettings() {
     game.settings.register(MODULE_ID, 'aiModel', { name: 'LLM Model Name', hint: 'The specific model identifier to use (e.g., gpt-4o, gpt-3.5-turbo, local model ID).', scope: 'world', config: true, type: String, default: 'gpt-4o' });
     game.settings.register(MODULE_ID, 'showOfferToPlayers', { name: 'Show AI Offer/Suggestions to Players?', hint: 'If checked, players who own the current actor (or all players if no owner) will see the AI turn offer and suggestion messages. If unchecked, only the GM sees these messages.', scope: 'world', config: true, type: Boolean, default: false });
     game.settings.register(MODULE_ID, 'includeReactionsInPrompt', { name: "Include Reactions in Prompt", hint: "Include Reaction abilities in the list sent to the AI for consideration.", scope: "world", config: true, type: Boolean, default: true });
-    game.settings.register(MODULE_ID, 'deleteDesignationMessageOnConfirm', { name: "Delete Designation Message on Confirm?", hint: "If checked, the 'AI Designation Setup' chat message will be automatically deleted after you click 'Confirm Designations'.", scope: 'world', config: true, type: Boolean, default: false });
 
     // Setting: Whisper Turn Summary to GM Only
     game.settings.register(MODULE_ID, 'whisperTurnSummary', {
