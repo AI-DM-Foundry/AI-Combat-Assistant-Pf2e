@@ -666,109 +666,9 @@ Hooks.once('ready', () => {
     console.log("PF2e AI Combat Assistant | Settings Initialized");
 });
 
-Hooks.on('createCombat', async (combat, options, userId) => {
-    console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook fired. Combat ID: ${combat?.id}, User ID: ${userId}, Is GM: ${game.user.isGM}`);
-    if (!game.user.isGM || (userId && userId !== game.userId)) {
-        console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook exiting early. Not GM or not the triggering user.`);
-        return;
-    }
-    // console.log(`PF2e AI Combat Assistant | createCombat hook fired for Combat ${combat.id}`); // DEBUG
-    await new Promise(resolve => setTimeout(resolve, 250)); // Allow combatants to populate
-    const combatants = combat.combatants?.contents;
-    if (!combatants || combatants.length === 0) {
-        console.warn("PF2e AI Combat Assistant | DEBUG: No combatants found in new combat. Exiting createCombat hook.");
-        return;
-    } // DEBUG
+// Hooks.on('createCombat', ...) // Removed - Designation now handled in renderCombatTracker
 
-    // console.log(`PF2e AI Combat Assistant | Found ${combatants.length} combatants for designation setup.`); // DEBUG
-    let combatantListHtml = '<ul style="list-style: none; padding: 0; margin: 0;">';
-    combatants.forEach(combatant => {
-        // Default everyone to enemy initially for easier setup in most cases
-        const initialDesignation = 'enemy';
-        const initialIcon = 'fa-skull-crossbones';
-        const initialColor = 'salmon';
-        combatantListHtml += `
-            <li style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px dashed #ccc; padding: 4px 2px;"
-                data-combatant-entry-id="${combatant.id}" data-ai-current-designation="${initialDesignation}">
-                <div class="ai-combatant-info" style="display: flex; align-items: center; flex-grow: 1; margin-right: 10px;">
-                    <img src="${combatant.img || CONST.DEFAULT_TOKEN}" width="24" height="24" style="vertical-align: middle; margin-right: 5px; border: none; flex-shrink: 0;">
-                    <strong style="vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${combatant.name}">${combatant.name || 'Unknown Name'}</strong>
-                </div>
-                <div class="ai-designation-buttons" style="flex-shrink: 0;">
-                    <button class="ai-designate-toggle-btn" data-combatant-id="${combatant.id}" title="Toggle AI Designation (Friendly/Enemy)" style="min-width: 80px; background-color: ${initialColor};">
-                        <i class="fas ${initialIcon}"></i> ${initialDesignation.charAt(0).toUpperCase() + initialDesignation.slice(1)}
-                    </button>
-                </div>
-            </li>`;
-    });
-    combatantListHtml += '</ul>';
-
-    const setupContent = `
-        <div class="ai-designation-setup" style="border: 1px solid #ccc; padding: 5px; margin-top: 5px;" data-combat-id="${combat.id}">
-            <strong>AI Designation Setup</strong><br>Mark combatants as Friendly or Enemy for the AI. Default is Enemy.
-            ${combatantListHtml}<hr style="margin:5px 0;">
-            <button class="ai-confirm-designations" title="Save Designations to Combat"><i class="fas fa-save"></i> Confirm Designations</button>
-        </div>`;
-
-    console.log(`PF2e AI Combat Assistant | DEBUG: Preparing to create designation setup message for Combat ID: ${combat.id}`);
-    if (game.users.activeGM) {
-        console.log(`PF2e AI Combat Assistant | DEBUG: Active GM found. Proceeding to create message.`);
-        try {
-            await ChatMessage.create({
-                speaker: { alias: "AI Setup" },
-                content: setupContent,
-                whisper: ChatMessage.getWhisperRecipients("GM")
-            });
-            console.log(`PF2e AI Combat Assistant | DEBUG: Successfully created designation setup message for Combat ID: ${combat.id}.`);
-            // console.log(`PF2e AI Combat Assistant | Designation setup message posted for combat ${combat.id}.`); // DEBUG
-        } catch (error) {
-            console.error(`PF2e AI Combat Assistant | DEBUG: Failed to create designation setup message for Combat ID: ${combat.id}:`, error);
-        }
-    } else {
-        console.warn(`PF2e AI Combat Assistant | DEBUG: No active GM found to send designation setup message for Combat ID: ${combat.id}.`);
-    }
-    console.log(`PF2e AI Combat Assistant | DEBUG: createCombat hook finished for Combat ID: ${combat.id}`);
-});
-
-Hooks.on('createCombatant', async (combatant, options, userId) => {
-    // Only GM should handle this setup prompt
-    if (!game.user.isGM || (userId && userId !== game.userId)) return;
-
-    const combat = combatant.combat;
-    // Only prompt if the combat is already active/started
-    if (!combat || !combat.started || !combatant?.actor) return;
-
-    // console.log(`PF2e AI Combat Assistant | createCombatant hook fired for ${combatant.name} in active Combat ${combat.id}`); // DEBUG
-    await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
-
-    // Get existing designations, default to enemy if not set
-    const existingDesignations = combat.getFlag(MODULE_ID, FLAGS.DESIGNATIONS) || {};
-    let currentDesignation = existingDesignations[combatant.id] || 'enemy'; // Default new combatants to enemy
-    let currentIcon = (currentDesignation === 'friendly') ? 'fa-smile' : 'fa-skull-crossbones';
-    let currentColor = (currentDesignation === 'friendly') ? 'lightgreen' : 'salmon';
-
-    const promptContent = `
-        <div class="ai-single-designation-prompt" style="border: 1px solid #ccc; padding: 5px; margin-top: 5px;"
-             data-combat-id="${combat.id}" data-combatant-id="${combatant.id}" data-current-designation="${currentDesignation}">
-             <strong>AI Designation for New Combatant</strong><br>How should the AI treat <strong>${combatant.name || 'Unknown Name'}</strong>?
-             <div style="display: flex; align-items: center; justify-content: space-around; margin-top: 5px;">
-                 <button class="ai-designate-single" data-designation="friendly" style="background-color: lightgreen; flex-grow: 1; margin-right: 5px;" title="Set as Friendly"><i class="fas fa-smile"></i> Friendly</button>
-                 <button class="ai-designate-single" data-designation="enemy" style="background-color: salmon; flex-grow: 1;" title="Set as Enemy"><i class="fas fa-skull-crossbones"></i> Enemy</button>
-            </div>
-            <div class="ai-designation-current" style="text-align: center; margin-top: 3px; font-size: 0.9em;">(Currently: <span style="color: ${currentColor};"><i class="fas ${currentIcon}"></i> ${currentDesignation.charAt(0).toUpperCase() + currentDesignation.slice(1)}</span>)</div>
-        </div>`;
-
-    try {
-        await ChatMessage.create({
-            speaker: { alias: "AI Setup" },
-            content: promptContent,
-            whisper: ChatMessage.getWhisperRecipients("GM")
-        });
-        // console.log(`PF2e AI Combat Assistant | Single designation prompt posted for ${combatant.name}.`); // DEBUG
-    } catch (error) {
-        console.error(`PF2e AI Combat Assistant | Failed to create single designation prompt message:`, error);
-    }
-});
+// Hooks.on('createCombatant', ...) // Removed - Designation now handled in renderCombatTracker
 
 Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
     // Check if the turn or round changed in an active combat
@@ -846,26 +746,7 @@ Hooks.on('renderChatMessage', (message, html, data) => {
     if (html.attr(listenerFlagAttribute)) return;
     html.attr(listenerFlagAttribute, 'true');
 
-    // --- Designation Setup Listeners (GM Only) ---
-    const designationSetupDiv = html.find('.ai-designation-setup');
-    if (designationSetupDiv.length > 0) {
-        if (game.user.isGM) {
-            designationSetupDiv.find('button.ai-designate-toggle-btn').off('click').on('click', _onToggleDesignationClick);
-            designationSetupDiv.find('button.ai-confirm-designations').off('click').on('click', _onConfirmDesignationsClick);
-        } else {
-            // Disable buttons for non-GMs
-            designationSetupDiv.find('button').prop('disabled', true).attr('title', 'GM only');
-        }
-    }
-    // --- Single Designation Prompt Listeners (GM Only) ---
-    const singlePromptDiv = html.find('.ai-single-designation-prompt');
-    if (singlePromptDiv.length > 0) {
-        if (game.user.isGM) {
-            singlePromptDiv.find('button.ai-designate-single').off('click').on('click', _onDesignateSingleClick);
-        } else {
-            singlePromptDiv.find('button').prop('disabled', true).attr('title', 'GM only');
-        }
-    }
+    // Designation listeners removed - Handled by renderCombatTracker hook now
 
     // --- AI Control & Suggestion Listeners (Respect showOfferToPlayers setting visibility) ---
     // Players might see these if setting allows, but some actions might still be GM-only
@@ -931,129 +812,7 @@ Hooks.on('deleteCombatant', async (combatant, options, userId) => {
     }
 });
 
-
-// --- Chat Button Handlers ---
-
-async function _onToggleDesignationClick(event) {
-    event.preventDefault();
-    if (!game.user.isGM) return; // Should be blocked by renderChatMessage, but double-check
-
-    const button = $(event.currentTarget);
-    const listItem = button.closest('li');
-    if (!listItem) return;
-
-    const currentDesignation = listItem.data('ai-current-designation') || 'enemy';
-    const newDesignation = (currentDesignation === 'friendly' ? 'enemy' : 'friendly');
-    const newIcon = (newDesignation === 'friendly' ? 'fa-smile' : 'fa-skull-crossbones');
-    const newColor = (newDesignation === 'friendly' ? 'lightgreen' : 'salmon');
-
-    // Update the list item's data attribute and the button appearance
-    listItem.data('ai-current-designation', newDesignation);
-    button.css('background-color', newColor)
-        .html(`<i class="fas ${newIcon}"></i> ${newDesignation.charAt(0).toUpperCase() + newDesignation.slice(1)}`);
-}
-
-async function _onConfirmDesignationsClick(event) {
-    event.preventDefault();
-    if (!game.user.isGM) return;
-
-    const button = $(event.currentTarget);
-    const container = button.closest('.ai-designation-setup');
-    const combatId = container.data('combatId');
-    const combat = game.combats.get(combatId);
-
-    if (!combat) {
-        ui.notifications.error("PF2e AI Combat Assistant Error: Combat not found for designation confirmation!");
-        return;
-    }
-
-    // Disable buttons during save
-    button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
-    container.find('button').prop('disabled', true); // Disable toggle buttons too
-
-    const designationsToSave = {};
-    container.find('li[data-combatant-entry-id]').each((index, element) => {
-        const listItem = $(element);
-        const combatantEntryId = listItem.data('combatantEntryId');
-        const designation = listItem.data('ai-current-designation') || 'enemy'; // Default to enemy if somehow missing
-        if (combatantEntryId) {
-            designationsToSave[combatantEntryId] = designation;
-        }
-    });
-
-    try {
-        await combat.setFlag(MODULE_ID, FLAGS.DESIGNATIONS, designationsToSave);
-        // console.log(`PF2e AI Combat Assistant | Designations saved for combat ${combat.id}.`, designationsToSave); // DEBUG
-        button.html('<i class="fas fa-check"></i> Saved');
-        // Optionally post a confirmation message (GM only)
-        ChatMessage.create({
-            content: `AI designations saved for combat ${combat.name || combat.id}.`,
-            whisper: ChatMessage.getWhisperRecipients("GM")
-        });
-        // Note: Buttons remain disabled after saving to prevent accidental changes.
-        // The chat card is now just a record.
-    } catch (error) {
-        console.error(`PF2e AI Combat Assistant | Failed to save designations:`, error);
-        ui.notifications.error("PF2e AI Combat Assistant Error: Failed to save designations. Check console.");
-        button.html('<i class="fas fa-times"></i> Failed');
-        // Re-enable buttons on failure to allow retry
-        container.find('button').prop('disabled', false);
-        button.html('<i class="fas fa-save"></i> Confirm Designations'); // Reset button text
-    }
-}
-
-async function _onDesignateSingleClick(event) {
-    event.preventDefault();
-    if (!game.user.isGM) return;
-
-    const button = $(event.currentTarget);
-    const promptDiv = button.closest('.ai-single-designation-prompt');
-    const combatId = promptDiv.data('combatId');
-    const targetCombatantId = promptDiv.data('combatantId');
-    const newDesignation = button.data('designation');
-    const combat = game.combats.get(combatId);
-
-    if (!combat) { ui.notifications.error("PF2e AI Combat Assistant Error: Combat not found for single designation!"); return; }
-    const targetCombatant = combat.combatants.get(targetCombatantId);
-    if (!targetCombatant) { ui.notifications.error("PF2e AI Combat Assistant Error: Combatant not found in combat for single designation!"); return; }
-
-    // Disable buttons during save
-    promptDiv.find('button').prop('disabled', true);
-    button.html('<i class="fas fa-spinner fa-spin"></i> Saving...');
-
-    try {
-        // Get current flags, update the specific combatant, set back
-        const currentDesignations = combat.getFlag(MODULE_ID, FLAGS.DESIGNATIONS) || {};
-        currentDesignations[targetCombatantId] = newDesignation;
-        await combat.setFlag(MODULE_ID, FLAGS.DESIGNATIONS, currentDesignations);
-        // console.log(`PF2e AI Combat Assistant | Designation for ${targetCombatant.name} set to ${newDesignation}.`); // DEBUG
-
-        // Update the button that was clicked and the status display
-        button.html(`<i class="fas fa-check"></i> ${newDesignation.charAt(0).toUpperCase() + newDesignation.slice(1)}`);
-        const newIcon = (newDesignation === 'friendly') ? 'fa-smile' : 'fa-skull-crossbones';
-        const newColor = (newDesignation === 'friendly') ? 'lightgreen' : 'salmon';
-        promptDiv.find('.ai-designation-current span')
-            .css('color', newColor)
-            .html(`<i class="fas ${newIcon}"></i> ${newDesignation.charAt(0).toUpperCase() + newDesignation.slice(1)}`);
-
-        // Optional confirmation message
-        ChatMessage.create({
-            content: `AI designation for ${targetCombatant.name} set to ${newDesignation}.`,
-            whisper: ChatMessage.getWhisperRecipients("GM")
-        });
-        // Keep other button disabled
-        promptDiv.find('button').not(button).prop('disabled', true);
-
-    } catch (error) {
-        console.error(`PF2e AI Combat Assistant | Failed to save single designation:`, error);
-        ui.notifications.error("PF2e AI Combat Assistant Error: Failed to save designation. Check console.");
-        // Re-enable buttons on failure
-        promptDiv.find('button').prop('disabled', false);
-        // Reset the clicked button's original content
-        const originalIcon = (button.data('designation') === 'friendly') ? 'fa-smile' : 'fa-skull-crossbones';
-        button.html(`<i class="fas ${originalIcon}"></i> ${button.data('designation').charAt(0).toUpperCase() + button.data('designation').slice(1)}`);
-    }
-}
+// --- Chat Button Handlers (Designation handlers removed) ---
 
 
 async function _onAcceptControlClick(event) {
@@ -1695,7 +1454,6 @@ async function _onRetryTurnClick(event) {
     button.prop('disabled', true);
 }
 // --- END NEW Handler ---
-// REMOVING DUPLICATED _onRetryTurnClick function block
 
 
 /**
@@ -1703,7 +1461,6 @@ async function _onRetryTurnClick(event) {
  * @param {ActorPF2e} actor - The actor who used the ability.
  * @param {ItemPF2e} ability - The ability (spell, feat, action) item that was used.
  */
-// REMOVING DUPLICATED COMMENT LINES
 async function applyCooldownEffect(actor, ability) {
     if (!actor || !ability || !ability.system || !ability.slug) return;
 
@@ -5784,6 +5541,121 @@ function registerSettings() {
     });
 }
 
+// --- Combat Tracker Hook for Designations ---
+
+// --- Combat Tracker Hook for Designations ---
+
+/**
+ * Adds AI designation controls to the combat tracker.
+ * @param {CombatTracker} tracker The CombatTracker application instance.
+ * @param {jQuery} html The jQuery object representing the tracker's HTML.
+ * @param {object} data Data used to render the tracker.
+ */
+function onRenderCombatTracker(tracker, html, data) {
+    if (!game.user.isGM) return; // Only GM can see/use these controls
+
+    const combat = tracker.viewed; // Get the combat being viewed
+    if (!combat) return;
+
+    const designations = combat.getFlag(MODULE_ID, FLAGS.DESIGNATIONS) || {};
+
+    html.find('.combatant').each((index, element) => {
+        const li = $(element);
+        const combatantId = li.data('combatant-id');
+        if (!combatantId) return;
+
+        // Check if button already exists to prevent duplicates on re-render
+        if (li.find('.ai-designate-tracker-toggle-btn').length > 0) return;
+
+        const combatant = combat.combatants.get(combatantId);
+        if (!combatant) return;
+
+        const currentDesignation = designations[combatantId] || 'enemy'; // Default to enemy
+        const isFriendly = currentDesignation === 'friendly';
+        const iconClass = isFriendly ? 'fa-smile' : 'fa-skull-crossbones';
+        const buttonColor = isFriendly ? 'lightgreen' : 'salmon';
+        const buttonText = isFriendly ? 'Friendly' : 'Enemy';
+        const buttonTitle = `Toggle AI Designation (Currently: ${buttonText})`;
+
+        const buttonHtml = `
+            <button class="ai-designate-tracker-toggle-btn control-icon"
+                    data-combatant-id="${combatantId}"
+                    title="${buttonTitle}"
+                    style="flex: 0 0 24px; height: 24px; font-size: 10px; line-height: 1; text-align: center; margin-left: 3px; background-color: ${buttonColor}; color: black; border: 1px solid #666; padding: 0;">
+                <i class="fas ${iconClass}"></i>
+            </button>
+        `;
+
+        // Append the button to the combatant controls area
+        const controlsDiv = li.find('.combatant-controls');
+        if (controlsDiv.length > 0) {
+            controlsDiv.append(buttonHtml);
+            // Add listener directly after appending
+            controlsDiv.find('.ai-designate-tracker-toggle-btn').on('click', _onToggleDesignationInTrackerClick);
+        } else {
+            console.warn(`PF2e AI Combat Assistant | Could not find .combatant-controls for ${combatant.name}`);
+        }
+    });
+}
+
+/**
+ * Handles clicks on the designation toggle button within the combat tracker.
+ * @param {Event} event The click event.
+ */
+async function _onToggleDesignationInTrackerClick(event) {
+    event.preventDefault();
+    event.stopPropagation(); // Prevent other tracker events if necessary
+    if (!game.user.isGM) return;
+
+    const button = $(event.currentTarget);
+    const combatantId = button.data('combatantId');
+    const combat = game.combat; // Get current combat
+
+    if (!combat || !combatantId) {
+        ui.notifications.error("PF2e AI Combat Assistant Error: Combat or Combatant ID not found for tracker designation toggle!");
+        return;
+    }
+
+    const combatant = combat.combatants.get(combatantId);
+    if (!combatant) {
+        ui.notifications.error("PF2e AI Combat Assistant Error: Combatant not found in current combat!");
+        return;
+    }
+
+    try {
+        const currentDesignations = combat.getFlag(MODULE_ID, FLAGS.DESIGNATIONS) || {};
+        const currentDesignation = currentDesignations[combatantId] || 'enemy';
+        const newDesignation = (currentDesignation === 'friendly' ? 'enemy' : 'friendly');
+
+        // Update the flag
+        currentDesignations[combatantId] = newDesignation;
+        await combat.setFlag(MODULE_ID, FLAGS.DESIGNATIONS, currentDesignations);
+        console.log(`PF2e AI Combat Assistant | Designation for ${combatant.name} set to ${newDesignation} via tracker.`);
+
+        // Update button appearance directly
+        const isFriendly = newDesignation === 'friendly';
+        const iconClass = isFriendly ? 'fa-smile' : 'fa-skull-crossbones';
+        const buttonColor = isFriendly ? 'lightgreen' : 'salmon';
+        const buttonTitle = `Toggle AI Designation (Currently: ${isFriendly ? 'Friendly' : 'Enemy'})`;
+
+        button.css('background-color', buttonColor)
+              .attr('title', buttonTitle)
+              .find('i')
+              .removeClass('fa-smile fa-skull-crossbones')
+              .addClass(iconClass);
+
+        // Optional: Briefly highlight the change
+        button.addClass('ai-button-flash');
+        setTimeout(() => button.removeClass('ai-button-flash'), 500);
+
+    } catch (error) {
+        console.error(`PF2e AI Combat Assistant | Failed to toggle designation via tracker for ${combatant.name}:`, error);
+        ui.notifications.error("PF2e AI Combat Assistant Error: Failed to update designation. Check console.");
+    }
+}
+
+
+
 // --- Hooks ---
 
 // Hook to store the timestamp when a combatant's turn starts
@@ -5961,12 +5833,15 @@ async function handleChatMessage(message, options, userId) {
 
 // --- Module Initialization ---
 
-Hooks.once('ready', () => {
+Hooks.once('ready', () => { // Keep existing ready hook content
     console.log("PF2e AI Combat Assistant | Ready Hook: Initializing.");
 
     // Register Settings if not already done (safe check inside function)
     registerSettings();
     // Hook to add AI Notes field to PC sheet biography tab
+    // Hook to add controls to combat tracker
+    Hooks.on('renderCombatTracker', onRenderCombatTracker);
+
     Hooks.on('renderActorSheetPF2eCharacter', (sheet, html, data) => {
         console.log("PF2e AI Combat Assistant | renderActorSheetPF2eCharacter hook fired for:", sheet.actor.name); // DEBUG LOG 1
 
