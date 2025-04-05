@@ -7,13 +7,12 @@
   "manifest": "https://github.com/AI-DM-Foundry/AI-Combat-Assistant-Pf2e/releases/download/latest/module.json",
   "compatibility": {
     "minimum": "12",
-    "verified": "12"
+    "verified": "12.331"
   },
   "authors": [
     {
       "name": "AI DM Foundry",
-      "email": "",
-      "url": ""
+      "flags": {}
     }
   ],
   "relationships": {
@@ -37,7 +36,8 @@
     {
       "lang": "en",
       "name": "English",
-      "path": "lang/en.json"
+      "path": "lang/en.json",
+      "flags": {}
     }
   ],
   "url": "https://github.com/AI-DM-Foundry/AI-Combat-Assistant-Pf2e"

@@ -789,7 +789,7 @@ Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
     const actor = currentCombatant.actor;
 
     // Skip offer if the actor has an active player owner and the setting is GM-only
-    const hasActivePlayerOwner = actor.hasPlayerOwner && game.users.some(user => user.active && actor.testUserPermission(user, CONST.DOCUMENT_PERMISSION_LEVELS.OWNER));
+    const hasActivePlayerOwner = actor.hasPlayerOwner && game.users.some(user => user.active && actor.testUserPermission(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER));
     if (hasActivePlayerOwner && !game.settings.get(MODULE_ID, 'showOfferToPlayers') && !game.user.isGM) {
         // console.log(`AI Offer Skipped: Player ${game.user.name} has owner, GM-only setting active.`); // DEBUG
         return; // Player owns this token, GM-only setting, player is not GM -> no offer shown to this player
@@ -1492,10 +1492,14 @@ async function _onEndTurnClick(event) {
         ? recentEvents.map(event => `<li>${event}</li>`).join('')
         : '<li>No significant events recorded.</li>';
 
+    // Get speaker data which respects token name visibility
+    const speakerData = ChatMessage.getSpeaker({ token: combatant.token || actor.prototypeToken });
+    const displayName = speakerData.alias || actor.name; // Use alias (respects Anonymous) or fallback to actor name
+
     // Construct the final message with the narrative
     // Construct the final message with Intended Actions first, then Narrative
     const manualEndContent = `
-         <strong>${combatant.name}'s AI Turn Ended Manually</strong><br>
+         <strong>${displayName}'s AI Turn Ended Manually</strong><br>
          Intended Actions:<ul>${actionsListHtml}</ul>
          <p style="margin: 5px 0 5px 0; font-style: italic; border-top: 1px dashed #ccc; padding-top: 5px;">${narrativeSummary}</p>
          <details>
@@ -1508,11 +1512,16 @@ async function _onEndTurnClick(event) {
          <button class="ai-next-turn-btn" data-combatant-id="${combatant.id}" title="Advance turn (GM Only)"><i class="fas fa-arrow-right"></i> Next Turn</button>
      `;
 
-    // Create a single message visible to everyone
+    // Determine whisper recipients based on setting
+    const whisperRecipients = game.settings.get(MODULE_ID, 'whisperTurnSummary')
+        ? ChatMessage.getWhisperRecipients("GM")
+        : [];
+
+    // Create the chat message
     ChatMessage.create({
-        speaker: ChatMessage.getSpeaker({ token: combatant.token || actor.prototypeToken }),
+        speaker: speakerData, // Use the pre-calculated speaker data
         content: manualEndContent,
-        whisper: [] // Make message public
+        whisper: whisperRecipients // Set whisper based on setting
     });
 
     try {
@@ -2503,14 +2512,14 @@ if (turnState.actionsRemaining === 0) {
 
         // --- Craft Prompt (now includes manual notes) ---
         const prompt = craftSingleActionPrompt(combatant, currentGameState, turnState, skippedAction, notesForThisPrompt); // Removed interimResultsForPrompt
-        console.groupCollapsed(`PF2e Arena AI | Prompt for ${combatant.name} (R${combat.round}.T${combat.turn})`); console.log(prompt); console.groupEnd();
+        console.groupCollapsed(`PF2e AI Combat Assistant | Prompt for ${combatant.name} (R${combat.round}.T${combat.turn})`); console.log(prompt); console.groupEnd();
 
         // --- Call LLM ---
         const apiKey = game.settings.get(MODULE_ID, 'apiKey'); const endpoint = game.settings.get(MODULE_ID, 'llmEndpoint'); const modelName = game.settings.get(MODULE_ID, 'aiModel');
         if (!apiKey || !endpoint || !modelName) throw new Error("LLM API Key, Endpoint, or Model Name not configured.");
         let llmResponseContent = await callLLM(prompt, apiKey, endpoint, modelName);
         if (!llmResponseContent) throw new Error("Received no valid response content from the LLM.");
-        console.groupCollapsed(`PF2e Arena AI | Raw LLM Resp: ${combatant.name}`); console.debug(llmResponseContent); console.groupEnd();
+        console.groupCollapsed(`PF2e AI Combat Assistant | Raw LLM Resp: ${combatant.name}`); console.debug(llmResponseContent); console.groupEnd();
 
         // --- Parse and Validate LLM Suggestion ---
         let parsedSuggestion = parseLLMSuggestion(llmResponseContent);
@@ -2518,7 +2527,7 @@ if (turnState.actionsRemaining === 0) {
         if (!parsedSuggestion?.description) {
             if (llmResponseContent && llmResponseContent.trim().length > 0 && !llmResponseContent.toUpperCase().includes("ACTION:") && !llmResponseContent.toUpperCase().includes("COST:")) {
                 parsedSuggestion = { description: llmResponseContent.trim(), cost: 1, rationale: "LLM response format unclear, assuming 1 action." }; // Default to 1 action
-                // console.log("PF2e Arena AI | Using fallback parsed suggestion due to non-compliant LLM format:", parsedSuggestion); // DEBUG
+                // console.log("PF2e AI Combat Assistant | Using fallback parsed suggestion due to non-compliant LLM format:", parsedSuggestion); // DEBUG
             } else {
                 throw new Error("LLM response could not be parsed into ACTION/COST format.");
             }
@@ -2533,12 +2542,12 @@ if (turnState.actionsRemaining === 0) {
         if (suggestedActionNameLower && passiveAbilityNamesLower.includes(suggestedActionNameLower)) {
             const activatableNamesLower = (currentGameState.self._actionsAndActionFeatsList || []).map(a => a.name.toLowerCase());
             if (!activatableNamesLower.includes(suggestedActionNameLower)) {
-                // console.warn(`PF2e Arena AI | AI suggested purely passive ability "${suggestionActionMatch[1].trim()}". Requesting new suggestion.`); // DEBUG
+                // console.warn(`PF2e AI Combat Assistant | AI suggested purely passive ability "${suggestionActionMatch[1].trim()}". Requesting new suggestion.`); // DEBUG
                 await requestNextAISuggestion(combatant, combat, parsedSuggestion.description, notesForThisPrompt); // Pass notes along
                 if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { }); // Clean up thinking message
                 return; // Stop processing this suggestion
             } else {
-                // console.log(`PF2e Arena AI | Note: AI suggested "${suggestedActionNameLower}" which is passive but also appears activatable.`); // DEBUG
+                // console.log(`PF2e AI Combat Assistant | Note: AI suggested "${suggestedActionNameLower}" which is passive but also appears activatable.`); // DEBUG
             }
         }
 
@@ -2565,7 +2574,7 @@ if (turnState.actionsRemaining === 0) {
 
                 if (relevantStrikesCount < 2) {
                     prerequisiteCheckPassed = false;
-                    console.warn(`PF2e Arena AI | Prerequisite Check FAILED for Rend (${actor.name} -> ${rendTargetName}). Needed 2 successful '${requiredStrikeType}' strikes, found ${relevantStrikesCount}. Requesting new suggestion.`);
+                    console.warn(`PF2e AI Combat Assistant | Prerequisite Check FAILED for Rend (${actor.name} -> ${rendTargetName}). Needed 2 successful '${requiredStrikeType}' strikes, found ${relevantStrikesCount}. Requesting new suggestion.`);
                     // Request a new suggestion, skipping the failed Rend attempt
                     await requestNextAISuggestion(combatant, combat, `Rend (Failed Prereq: ${relevantStrikesCount}/${2} ${requiredStrikeType} hits)`, notesForThisPrompt, turnState); // Pass current turnState
                     if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { }); // Clean up thinking message
@@ -2574,7 +2583,7 @@ if (turnState.actionsRemaining === 0) {
                     // console.log(`AI Prereq Check: Rend validation PASSED for ${actor.name} -> ${rendTargetName} (${relevantStrikesCount} relevant strikes found).`); // DEBUG
                 }
             } else {
-                console.warn(`PF2e Arena AI | Could not parse target name from Rend suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
+                console.warn(`PF2e AI Combat Assistant | Could not parse target name from Rend suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
             }
          } // --- ADDED: Prerequisite Validation for Grab ---
          else if (primaryActionName?.toLowerCase() === 'grab') {
@@ -2596,7 +2605,7 @@ if (turnState.actionsRemaining === 0) {
 
                      if (foundSuccessfulGrabStrike) {
                          meetsRequirement = true;
-                         console.log(`PF2e Arena AI | Prereq Check: Grab validation PASSED (Req 1: Found recent successful Strike with Grab by ${actorName})`); // DEBUG
+                         console.log(`PF2e AI Combat Assistant | Prereq Check: Grab validation PASSED (Req 1: Found recent successful Strike with Grab by ${actorName})`); // DEBUG
                      }
                  }
 
@@ -2614,13 +2623,13 @@ if (turnState.actionsRemaining === 0) {
 
                  if (!meetsRequirement) {
                      prerequisiteCheckPassed = false;
-                     console.warn(`PF2e Arena AI | Prerequisite Check FAILED for Grab (${actor.name} -> ${grabTargetName}). Neither requirement met. Requesting new suggestion.`);
+                     console.warn(`PF2e AI Combat Assistant | Prerequisite Check FAILED for Grab (${actor.name} -> ${grabTargetName}). Neither requirement met. Requesting new suggestion.`);
                      await requestNextAISuggestion(combatant, combat, `Grab (Failed Prereqs)`, notesForThisPrompt, turnState);
                      if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { });
                      return; // Stop processing this invalid suggestion
                  }
              } else {
-                 console.warn(`PF2e Arena AI | Could not parse target name from Grab suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
+                 console.warn(`PF2e AI Combat Assistant | Could not parse target name from Grab suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
              }
          }
          // --- ADDED: Prerequisite Validation for Trip (using Knockdown) ---
@@ -2639,19 +2648,19 @@ if (turnState.actionsRemaining === 0) {
                      });
                      if (foundSuccessfulKnockdownStrike) {
                          meetsRequirement = true;
-                         console.log(`PF2e Arena AI | Prereq Check: Trip validation PASSED (Found recent successful Strike with Knockdown by ${actorName})`); // DEBUG
+                         console.log(`PF2e AI Combat Assistant | Prereq Check: Trip validation PASSED (Found recent successful Strike with Knockdown by ${actorName})`); // DEBUG
                      }
                  }
 
                  if (!meetsRequirement) {
                      prerequisiteCheckPassed = false;
-                     console.warn(`PF2e Arena AI | Prerequisite Check FAILED for Trip (${actor.name} -> ${tripTargetName}). Requirement not met (No recent successful Strike + Knockdown). Requesting new suggestion.`);
+                     console.warn(`PF2e AI Combat Assistant | Prerequisite Check FAILED for Trip (${actor.name} -> ${tripTargetName}). Requirement not met (No recent successful Strike + Knockdown). Requesting new suggestion.`);
                      await requestNextAISuggestion(combatant, combat, `Trip (Failed Prereqs)`, notesForThisPrompt, turnState);
                      if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { });
                      return; // Stop processing this invalid suggestion
                  }
              } else {
-                 console.warn(`PF2e Arena AI | Could not parse target name from Trip suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
+                 console.warn(`PF2e AI Combat Assistant | Could not parse target name from Trip suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
              }
          }
          // --- ADDED: Prerequisite Validation for Shove (using Push) ---
@@ -2670,19 +2679,19 @@ if (turnState.actionsRemaining === 0) {
                      });
                      if (foundSuccessfulPushStrike) {
                          meetsRequirement = true;
-                         console.log(`PF2e Arena AI | Prereq Check: Shove validation PASSED (Found recent successful Strike with Push by ${actorName})`); // DEBUG
+                         console.log(`PF2e AI Combat Assistant | Prereq Check: Shove validation PASSED (Found recent successful Strike with Push by ${actorName})`); // DEBUG
                      }
                  }
 
                  if (!meetsRequirement) {
                      prerequisiteCheckPassed = false;
-                     console.warn(`PF2e Arena AI | Prerequisite Check FAILED for Shove (${actor.name} -> ${shoveTargetName}). Requirement not met (No recent successful Strike + Push). Requesting new suggestion.`);
+                     console.warn(`PF2e AI Combat Assistant | Prerequisite Check FAILED for Shove (${actor.name} -> ${shoveTargetName}). Requirement not met (No recent successful Strike + Push). Requesting new suggestion.`);
                      await requestNextAISuggestion(combatant, combat, `Shove (Failed Prereqs)`, notesForThisPrompt, turnState);
                      if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { });
                      return; // Stop processing this invalid suggestion
                  }
              } else {
-                 console.warn(`PF2e Arena AI | Could not parse target name from Shove suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
+                 console.warn(`PF2e AI Combat Assistant | Could not parse target name from Shove suggestion: "${parsedSuggestion.description}". Skipping prerequisite check.`); // DEBUG
              }
          }
         // --- END ADDED --- (Comment updated to reflect multiple additions)
@@ -2693,7 +2702,7 @@ if (turnState.actionsRemaining === 0) {
             const effectLinkText = "(Apply Effect)";
             const effectLink = ` @UUID[${identifyResult.stanceEffectUUID}]{${effectLinkText}}`;
             parsedSuggestion.description += effectLink;
-            // console.log(`PF2e Arena AI | Appended stance effect link to suggestion description.`); // DEBUG
+            // console.log(`PF2e AI Combat Assistant | Appended stance effect link to suggestion description.`); // DEBUG
         }
         parsedSuggestion.description = parsedSuggestion.description.trim();
 
@@ -2867,8 +2876,8 @@ if (turnState.actionsRemaining === 0) {
         if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { });
 
     } catch (error) {
-        console.error(`PF2e Arena AI | Error during suggestion request for ${combatant.name}:`, error);
-        ui.notifications.error(`PF2e Arena AI Error: ${error.message}`);
+        console.error(`PF2e AI Combat Assistant | Error during suggestion request for ${combatant.name}:`, error);
+        ui.notifications.error(`PF2e AI Combat Assistant Error: ${error.message}`);
         // Clean up flags and thinking message on error
         await clearAITurnFlags(actor); // Use fresh actor
         if (thinkingMessage?.id) await thinkingMessage.delete().catch(() => { });
@@ -3030,7 +3039,7 @@ async function gatherGameState(currentCombatant, combat, actionsRemaining, actor
     // Removed extra closing brace that caused syntax error
     // --- END: Helper functions ---
 
-    // console.log(`PF2e Arena AI | --- Gathering Game State for ${currentCombatant?.name ?? 'Unknown'} (Actions Remaining: ${actionsRemaining}) ---`); // DEBUG
+    // console.log(`PF2e AI Combat Assistant | --- Gathering Game State for ${currentCombatant?.name ?? 'Unknown'} (Actions Remaining: ${actionsRemaining}) ---`); // DEBUG
     const actor = actorOverride || currentCombatant?.actor; // Use override if provided, else fallback
     const scene = combat?.scene;
     const grid = canvas?.grid;
@@ -3595,63 +3604,64 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
     let sensesString = 'Normal'; try { const sensesData = actor.system.attributes?.senses; if (sensesData && typeof sensesData === 'object') { const sensesList = Object.entries(sensesData).filter(([key, sense]) => sense && typeof sense === 'object' && sense.value > 0 && key !== 'special').map(([key, sense]) => { const label = sense.label || key.charAt(0).toUpperCase() + key.slice(1); const value = sense.value || ''; const unit = sense.unit || (key === 'darkvision' || key === 'low-light-vision' ? '' : ' feet'); const type = sense.type ? ` (${sense.type})` : ''; return `${label}${value ? ' ' + value : ''}${unit}${type}`.trim(); }); if (sensesList.length > 0) sensesString = sensesList.join(', '); } } catch (senseError) { sensesString = 'Error Processing Senses'; }
     let selfFormattedConditions = [];
     let selfFormattedEffects = [];
-    const processedConditionSlugs = new Set(); // Track slugs processed via itemTypes
 
     try {
-        const tokenDoc = canvas.scene?.tokens.get(currentCombatant.tokenId);
-        const actorItems = actor.items?.contents || [];
-        const tokenDeltaItems = tokenDoc?.delta?.items || [];
-        const combinedItems = new Map(); // Use a Map to handle potential duplicates by ID
+        // --- Use Token Document Actor for Conditions/Effects ---
+        const tokenActor = selfTokenDocument?.actor;
+        if (tokenActor) {
+            console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Using Token Actor (${tokenActor.id}) for conditions/effects.`); // DEBUG
 
-        // Add actor items first
-        actorItems.forEach(item => {
-            if (item?._id) combinedItems.set(item._id, item);
-        });
-
-        // Add/overwrite with token delta items (these are often more up-to-date for temporary effects)
-        tokenDeltaItems.forEach(item => {
-            if (item?._id) combinedItems.set(item._id, item);
-        });
-
-        const allRelevantItems = Array.from(combinedItems.values());
-        console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Total unique items from Actor + Token Delta: ${allRelevantItems.length}`); // DEBUG
-
-        selfFormattedConditions = []; // Reset
-        selfFormattedEffects = [];    // Reset
-
-        allRelevantItems.forEach(item => {
-            try {
-                if (item.type === 'condition') {
-                    const formatted = formatConditionOrEffect(item, true); // includeDescription = true
-                    if (formatted) {
-                        selfFormattedConditions.push(formatted);
-                    }
-                } else if (item.type === 'effect') {
-                    const formatted = formatConditionOrEffect(item, true); // includeDescription = true
-                    if (formatted) {
-                        selfFormattedEffects.push(formatted);
-                    }
-                }
-            } catch (itemError) {
-                 console.error(`AI GatherState: Error processing combined item "${item?.name}" (ID: ${item?.id}) for conditions/effects:`, itemError);
+            // Process Conditions from Token Actor
+            if (tokenActor.itemTypes?.condition?.length > 0) {
+                selfFormattedConditions = tokenActor.itemTypes.condition
+                    .map(item => formatConditionOrEffect(item, true)) // includeDescription = true
+                    .filter(item => item !== null);
             }
-        });
 
-        // +++ DEBUG LOG: Check results from combined iteration +++
-        console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Conditions found (Actor + Delta):`, selfFormattedConditions);
-        console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Effects found (Actor + Delta):`, selfFormattedEffects);
-        // +++ END DEBUG LOG +++
+            // Process Effects from Token Actor
+            if (tokenActor.itemTypes?.effect?.length > 0) {
+                selfFormattedEffects = tokenActor.itemTypes.effect
+                    .map(item => formatConditionOrEffect(item, true)) // includeDescription = true
+                    .filter(item => item !== null);
+            }
+
+            // --- Stance Check (using Token Actor's effects) ---
+            const stanceEffectItem = tokenActor.itemTypes.effect.find(eff => eff.name.startsWith("Stance:"));
+            if (stanceEffectItem) {
+                activeStance.name = stanceEffectItem.name.replace(/^Stance:\s*/, '');
+                // Optionally format the description if needed later:
+                // activeStance.desc = formatConditionOrEffect(stanceEffectItem, true)?.desc;
+            } else {
+                 activeStance = { name: "None", desc: null }; // Reset if no stance found on token actor
+            }
+            // --- End Stance Check ---
+
+
+            // +++ DEBUG LOG: Check results from token actor iteration +++
+            console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Conditions found (Token Actor):`, selfFormattedConditions);
+            console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Effects found (Token Actor):`, selfFormattedEffects);
+            console.log(`AI Debug Self Stance (${actor.name} - ${actor.type}): Stance found (Token Actor):`, activeStance); // DEBUG Stance
+            // +++ END DEBUG LOG +++
+
+        } else {
+            console.warn(`AI GatherState: Could not find token document actor for ${actor.name}. Conditions/effects might be incomplete.`);
+            // Fallback or leave arrays empty if token actor isn't available
+            selfFormattedConditions = [];
+            selfFormattedEffects = [];
+            activeStance = { name: "None", desc: null }; // Reset stance on error
+        }
 
     } catch (selfCondError) {
-        console.error(`AI GatherState: Error formatting self conditions/effects for ${actor.name} via combined items:`, selfCondError);
+        console.error(`AI GatherState: Error formatting self conditions/effects for ${actor.name} using token actor:`, selfCondError);
         // Ensure arrays are empty on error
         selfFormattedConditions = [];
         selfFormattedEffects = [];
+        activeStance = { name: "None", desc: null }; // Reset stance on error
     }
 
     // Combine conditions and effects.
     const selfConditionsEffects = [...selfFormattedConditions, ...selfFormattedEffects];
-    console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Final selfConditionsEffects Array (Combined):`, selfConditionsEffects); // Log the final combined array
+    console.log(`AI Debug Self Cond/Eff (${actor.name} - ${actor.type}): Final selfConditionsEffects Array (from Token Actor):`, selfConditionsEffects); // Log the final combined array
 
 
 
@@ -4326,7 +4336,7 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
             // --- Consolidate Attack Events ---
             recentEvents = await filteredMessages.reduce(async (accPromise, msg) => {
                 const acc = await accPromise; // Resolve the accumulator promise
-                console.log("PF2e Arena AI | Processing message object for recentEvents:", msg); // DEBUG: Log the full message object being processed
+                console.log("PF2e AI Combat Assistant | Processing message object for recentEvents:", msg); // DEBUG: Log the full message object being processed
                 const speakerName = msg.speaker?.alias || msg.user?.name || 'Unknown';
                 const context = msg.flags?.pf2e?.context;
 // --- PRIORITIZE REGENERATION CHECK BASED ON FLAVOR TEXT ---
@@ -4409,7 +4419,7 @@ if (!processedAsRegen) {
             acc.push(eventString);
 
         } catch (error) {
-            console.error("PF2e Arena AI | Error processing attack roll message:", error, msg);
+            console.error("PF2e AI Combat Assistant | Error processing attack roll message:", error, msg);
             acc.push(`${speakerName}: Attack Roll (Error processing details)`);
         }
     } else if (context?.type === 'damage-roll') {
@@ -4422,7 +4432,7 @@ if (!processedAsRegen) {
             const eventString = `${speakerName}: ${skillName} Check -> ${outcome}`;
             acc.push(eventString);
         } catch (error) {
-             console.error("PF2e Arena AI | Error processing skill check message:", error, msg);
+             console.error("PF2e AI Combat Assistant | Error processing skill check message:", error, msg);
              acc.push(`${speakerName}: Skill Check (Error processing details)`);
         }
     } else if (context?.type === 'saving-throw') {
@@ -4438,7 +4448,7 @@ if (!processedAsRegen) {
            eventString += ` -> ${outcome}`;
            acc.push(eventString);
         } catch (error) {
-            console.error("PF2e Arena AI | Error processing saving throw message:", error, msg);
+            console.error("PF2e AI Combat Assistant | Error processing saving throw message:", error, msg);
             acc.push(`${speakerName}: Saving Throw (Error processing details)`);
         }
     // --- ADDED: Handle Spell Cast ---
@@ -4463,7 +4473,7 @@ if (!processedAsRegen) {
             acc.push(eventString);
             console.log(`AI Debug Events: Added Spell Cast event: ${eventString}`); // DEBUG
         } catch (error) {
-            console.error("PF2e Arena AI | Error processing spell cast message:", error, msg);
+            console.error("PF2e AI Combat Assistant | Error processing spell cast message:", error, msg);
             acc.push(`${speakerName}: Spell Cast (Error processing details)`);
         }
     // --- END ADDED ---
@@ -5108,16 +5118,54 @@ ${eventsList}
 // `callLLM`: Calls the API.
 async function callLLM(prompt, apiKey, endpoint, model = "gpt-4o") {
     // console.debug(`PF2e AI Combat Assistant | --- Calling LLM API (${model}) ---`); // DEBUG
-    if (!prompt || !apiKey || !endpoint || !model) { console.error("PF2e AI Combat Assistant | LLM call aborted: Missing parameters (prompt, apiKey, endpoint, or model)."); return null; }
+    if (!prompt || !apiKey || !endpoint || !model) {
+        console.error("PF2e AI Combat Assistant | LLM call aborted: Missing parameters (prompt, apiKey, endpoint, or model).");
+        ui.notifications.error("AI Assistant: LLM call aborted due to missing configuration. Check module settings and console (F12).", { permanent: true });
+        return null;
+    }
+    console.log(`PF2e AI Combat Assistant | Sending prompt to ${model} at ${endpoint}. Prompt length: ${prompt.length}`); // Log prompt length
     try {
         const response = await fetch(endpoint, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-            body: JSON.stringify({ model: model, messages: [{ role: "user", content: prompt }], temperature: 0.6, max_tokens: 180, stop: null })
+            body: JSON.stringify({ model: model, messages: [{ role: "user", content: prompt }], temperature: 0.6, max_tokens: 180, stop: null }) // Note: max_tokens might be low for some models/tasks
         });
-        if (!response.ok) { let errorBodyText = await response.text(); let errorDetails = errorBodyText; try { errorDetails = JSON.parse(errorBodyText); } catch (e) { /* ignore */ } console.error(`PF2e AI Combat Assistant | LLM API Error: ${response.status} ${response.statusText}`, errorDetails); throw new Error(`LLM API Error (${response.status} ${response.statusText}). Check console. Body: ${errorBodyText.substring(0, 500)}`); }
-        const responseData = await response.json(); const messageContent = responseData.choices?.[0]?.message?.content;
-        if (!messageContent) { console.warn("PF2e AI Combat Assistant | LLM response successful, but no message content found:", responseData); return null; } return messageContent.trim(); // DEBUG
-    } catch (error) { console.error("PF2e AI Combat Assistant | LLM call failed:", error); throw error; }
+
+        if (!response.ok) {
+            let errorBodyText = `Status: ${response.status} ${response.statusText}`;
+            try {
+                const body = await response.text();
+                errorBodyText += `. Body: ${body.substring(0, 500)}${body.length > 500 ? '...' : ''}`; // Limit logged body length
+            } catch (bodyError) {
+                errorBodyText += ` (Could not read error response body: ${bodyError})`;
+            }
+            console.error(`PF2e AI Combat Assistant | LLM API HTTP Error: ${errorBodyText}`);
+            throw new Error(`LLM API Error (${response.status}). Check console (F12) for details.`); // Throw a user-friendlier message
+        }
+
+        const responseData = await response.json();
+        const messageContent = responseData.choices?.[0]?.message?.content;
+
+        if (!messageContent) {
+            console.warn("PF2e AI Combat Assistant | LLM response successful, but no message content found:", responseData);
+            // Optionally notify user about empty response
+            // ui.notifications.warn("AI Assistant: Received an empty response from the LLM.");
+            return null;
+        }
+        return messageContent.trim();
+
+    } catch (error) {
+        // Log more detailed error information
+        console.error(`PF2e AI Combat Assistant | Error during LLM API call.`);
+        console.error(`> Endpoint: ${endpoint}`);
+        console.error(`> Model: ${model}`);
+        console.error(`> Prompt Length: ${prompt?.length ?? 'N/A'}`);
+        console.error(`> Error Details:`, error); // Log the full error object
+
+        // User-facing notification
+        ui.notifications.error(`AI Assistant: Error communicating with the LLM. Check the console (F12) for details. Common issues: incorrect API key/endpoint/model, network problems, or insufficient token context length.`, { permanent: true });
+
+        throw error; // Re-throw so the calling function knows it failed
+    }
 }
 
 // `parseLLMSuggestion`: Parses LLM response.
@@ -5490,7 +5538,7 @@ async function identifySuggestionTypeAndCost(description, actor, gameState) {
             // Return early to prevent generic matching
             return overallResult;
         } else {
-            console.warn(`PF2e Arena AI | Flurry of Blows suggested for ${actorName}, but no eligible (unarmed or monk trait) strike found in gameState.`);
+            console.warn(`PF2e AI Combat Assistant | Flurry of Blows suggested for ${actorName}, but no eligible (unarmed or monk trait) strike found in gameState.`);
             // Fall through to generic matching as a fallback
         }
     }
@@ -5700,13 +5748,29 @@ async function identifySuggestionTypeAndCost(description, actor, gameState) {
 // --- Settings Registration & Helpers ---
 
 function registerSettings() {
-    if (game.settings.settings.has(`${MODULE_ID}.apiKey`)) return;
+    // Check if settings are already registered to avoid duplicates
+    if (game.settings.settings.has(`${MODULE_ID}.apiKey`)) {
+        // console.log("PF2e AI Combat Assistant | Settings already registered."); // DEBUG
+        return;
+    }
+    // console.log("PF2e AI Combat Assistant | Registering settings..."); // DEBUG
     console.log("PF2e AI Combat Assistant | Registering module settings...");
     game.settings.register(MODULE_ID, 'apiKey', { name: 'LLM API Key', hint: 'Required API key for the LLM service (e.g., OpenAI). Keep this secret!', scope: 'world', config: true, type: String, default: '' });
     game.settings.register(MODULE_ID, 'llmEndpoint', { name: 'LLM API Endpoint URL', hint: 'URL for the chat completion API (e.g., OpenAI, local endpoint).', scope: 'world', config: true, type: String, default: 'https://api.openai.com/v1/chat/completions' });
     game.settings.register(MODULE_ID, 'aiModel', { name: 'LLM Model Name', hint: 'The specific model identifier to use (e.g., gpt-4o, gpt-3.5-turbo, local model ID).', scope: 'world', config: true, type: String, default: 'gpt-4o' });
     game.settings.register(MODULE_ID, 'showOfferToPlayers', { name: 'Show AI Offer/Suggestions to Players?', hint: 'If checked, players who own the current actor (or all players if no owner) will see the AI turn offer and suggestion messages. If unchecked, only the GM sees these messages.', scope: 'world', config: true, type: Boolean, default: false });
     game.settings.register(MODULE_ID, 'includeReactionsInPrompt', { name: "Include Reactions in Prompt", hint: "Include Reaction abilities in the list sent to the AI for consideration.", scope: "world", config: true, type: Boolean, default: true });
+
+    // Setting: Whisper Turn Summary to GM Only
+    game.settings.register(MODULE_ID, 'whisperTurnSummary', {
+        name: game.i18n.localize(`${MODULE_ID}.settings.whisperTurnSummary.name`),
+        hint: game.i18n.localize(`${MODULE_ID}.settings.whisperTurnSummary.hint`),
+        scope: 'world', // GM controls this setting
+        config: true,   // Show in module settings
+        type: Boolean,
+        default: false, // Default to public messages
+        requiresReload: false // No reload needed
+    });
 }
 
 // --- Hooks ---
@@ -5752,7 +5816,7 @@ async function handleChatMessage(message, options, userId) {
              try {
                 // await thinkingMessage.delete(); // Temporarily disable auto-delete, might be annoying
              } catch (err) {
-                 console.warn(`PF2e Arena AI | Failed to delete thinking message ${message.id}:`, err);
+                 console.warn(`PF2e AI Combat Assistant | Failed to delete thinking message ${message.id}:`, err);
              }
          }
          return;
@@ -5778,8 +5842,8 @@ async function handleChatMessage(message, options, userId) {
     const isAfterLastAction = !lastActionMsgId || message.id > lastActionMsgId; // Simple ID comparison assumes IDs are sequential
 
     if (isAiControlled && game.combat.current.combatantId === combatant.id && isAfterLastAction) {
-        // console.log(`PF2e Arena AI | Chat Message Hook: AI Combatant ${combatant.name}'s turn. Relevant message received:`, message); // DEBUG
-        console.log("PF2e Arena AI | Processing message object for recentEvents:", message); // DEBUG: Log the full message object
+        // console.log(`PF2e AI Combat Assistant | Chat Message Hook: AI Combatant ${combatant.name}'s turn. Relevant message received:`, message); // DEBUG
+        console.log("PF2e AI Combat Assistant | Processing message object for recentEvents:", message); // DEBUG: Log the full message object
 
         // --- Placeholder for Parsing Logic ---
         let parsedResult = null;
@@ -5798,7 +5862,7 @@ async function handleChatMessage(message, options, userId) {
             if (speakerActor?.id === actor.id || speakerToken?.id === combatant.token?.id) {
                 if (context.type === 'attack-roll' || context.type === 'spell-attack-roll') {
                     parsedResult = `Attack Roll (${actionName}): ${outcome} vs ${targetTokenName}.`; // Keep this for interim results
-                    // console.log(`PF2e Arena AI | Parsed (AI Action): ${parsedResult}`); // DEBUG
+                    // console.log(`PF2e AI Combat Assistant | Parsed (AI Action): ${parsedResult}`); // DEBUG
 
                     // --- ADDED: Record Successful Strikes for Prerequisite Checks ---
                     if (outcome === 'SUCCESS' || outcome === 'CRITICAL SUCCESS') {
@@ -5823,22 +5887,22 @@ async function handleChatMessage(message, options, userId) {
                     }
                     // --- END ADDED ---
                 }
-                     // console.log(`PF2e Arena AI | Parsed (AI Action): ${parsedResult}`); // DEBUG (Corrected indentation)
+                     // console.log(`PF2e AI Combat Assistant | Parsed (AI Action): ${parsedResult}`); // DEBUG (Corrected indentation)
                  else if (context.type === 'damage-roll') { // Removed extra '}'
                     const totalDamage = message.rolls?.reduce((sum, roll) => sum + roll.total, 0) || 0;
                     if (totalDamage > 0) {
                         parsedResult = `Damage Roll (${actionName}): ${totalDamage} damage to ${targetTokenName}.`;
-                        // console.log(`PF2e Arena AI | Parsed (AI Action): ${parsedResult}`); // DEBUG
+                        // console.log(`PF2e AI Combat Assistant | Parsed (AI Action): ${parsedResult}`); // DEBUG
                     }
                 } else if (context.type === 'saving-throw') {
                     // This case is usually when the AI *forces* a save
                     const saveType = context.statistic || 'Unknown Save';
                     parsedResult = `Forced Save (${actionName}): ${targetTokenName} rolled ${outcome} on ${saveType} save.`;
-                    // console.log(`PF2e Arena AI | Parsed (AI Action): ${parsedResult}`); // DEBUG
+                    // console.log(`PF2e AI Combat Assistant | Parsed (AI Action): ${parsedResult}`); // DEBUG
                 } else if (context.type === 'skill-check') {
                     const skill = context.statistic || 'Unknown Skill';
                     parsedResult = `Skill Check (${actionName} - ${skill}): ${outcome}.`;
-                    // console.log(`PF2e Arena AI | Parsed (AI Action): ${parsedResult}`); // DEBUG
+                    // console.log(`PF2e AI Combat Assistant | Parsed (AI Action): ${parsedResult}`); // DEBUG
                 }
                 // TODO: Add parsing for condition application/removal initiated by AI?
             }
@@ -5847,30 +5911,30 @@ async function handleChatMessage(message, options, userId) {
                  const sourceName = speakerToken?.name || speakerActor?.name || 'Unknown Source';
                  if (context.type === 'attack-roll' || context.type === 'spell-attack-roll') {
                      parsedResult = `Attack Roll vs AI (${actionName} from ${sourceName}): ${outcome}.`;
-                     // console.log(`PF2e Arena AI | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
+                     // console.log(`PF2e AI Combat Assistant | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
                  } else if (context.type === 'damage-roll') {
                      const totalDamage = message.rolls?.reduce((sum, roll) => sum + roll.total, 0) || 0;
                      if (totalDamage > 0) {
                          parsedResult = `Damage Roll vs AI (${actionName} from ${sourceName}): ${totalDamage} damage taken.`;
-                         // console.log(`PF2e Arena AI | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
+                         // console.log(`PF2e AI Combat Assistant | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
                      }
                  } else if (context.type === 'saving-throw') {
                      const saveType = context.statistic || 'Unknown Save';
                      parsedResult = `Saving Throw by AI (${saveType} vs ${actionName} from ${sourceName}): ${outcome}.`;
-                     // console.log(`PF2e Arena AI | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
+                     // console.log(`PF2e AI Combat Assistant | Parsed (Targeting AI): ${parsedResult}`); // DEBUG
                  }
                  // TODO: Add parsing for skill checks targeting AI, condition application?
             }
             // --- Message relates to other actors (e.g., ally action, enemy action vs ally) ---
             // This might be useful context too, but let's keep it focused for now.
-            // else { console.log(`PF2e Arena AI | Message context not directly involving AI actor or its target. Speaker: ${speakerActor?.name}, Target: ${targetTokenName}`); }
+            // else { console.log(`PF2e AI Combat Assistant | Message context not directly involving AI actor or its target. Speaker: ${speakerActor?.name}, Target: ${targetTokenName}`); }
 
         } else if (message.content?.includes('Reaction')) {
             // Basic check for reactions mentioned in text (less reliable)
             const sourceName = speakerToken?.name || speakerActor?.name || message.speaker?.alias || 'Unknown Source';
             if (sourceName !== actor.name) { // Don't log the AI's own reaction use if it announced it
                  parsedResult = `Other Action: ${sourceName} used a Reaction (details unknown).`;
-                 // console.log(`PF2e Arena AI | Parsed (Other): ${parsedResult}`); // DEBUG
+                 // console.log(`PF2e AI Combat Assistant | Parsed (Other): ${parsedResult}`); // DEBUG
             }
         }
         // TODO: Add more robust parsing for non-context messages if needed
@@ -5887,13 +5951,13 @@ async function handleChatMessage(message, options, userId) {
 // --- Module Initialization ---
 
 Hooks.once('ready', () => {
-    console.log("PF2e Arena AI | Ready Hook: Initializing.");
+    console.log("PF2e AI Combat Assistant | Ready Hook: Initializing.");
 
     // Register Settings if not already done (safe check inside function)
     registerSettings();
     // Hook to add AI Notes field to PC sheet biography tab
     Hooks.on('renderActorSheetPF2eCharacter', (sheet, html, data) => {
-        console.log("PF2e Arena AI | renderActorSheetPF2eCharacter hook fired for:", sheet.actor.name); // DEBUG LOG 1
+        console.log("PF2e AI Combat Assistant | renderActorSheetPF2eCharacter hook fired for:", sheet.actor.name); // DEBUG LOG 1
 
         // sheet: The ActorSheet instance
         // html: jQuery object representing the sheet's HTML content
@@ -5907,10 +5971,10 @@ Hooks.once('ready', () => {
         //    The exact selector might vary slightly with Foundry/PF2e updates,
         //    but it's usually a div with class 'tab' and data-tab='biography'
         const biographyTab = html.find('.tab[data-tab="biography"]');
-        console.log("PF2e Arena AI | Found biographyTab element:", biographyTab); // DEBUG LOG 2
+        console.log("PF2e AI Combat Assistant | Found biographyTab element:", biographyTab); // DEBUG LOG 2
 
         if (biographyTab.length > 0) {
-            console.log("PF2e Arena AI | Biography tab found. Proceeding to add AI Notes field."); // DEBUG LOG 3
+            console.log("PF2e AI Combat Assistant | Biography tab found. Proceeding to add AI Notes field."); // DEBUG LOG 3
             // 3. Get the current notes from the actor's flags
             const actor = sheet.actor;
             const currentNotes = actor.getFlag(MODULE_ID, FLAG_KEY) || ''; // Default to empty string if no flag exists
@@ -5934,9 +5998,9 @@ Hooks.once('ready', () => {
                 const newNotes = event.target.value;
                 try {
                     await actor.setFlag(MODULE_ID, FLAG_KEY, newNotes);
-                    console.log(`PF2e Arena AI | Saved AI Notes for ${actor.name}`);
+                    console.log(`PF2e AI Combat Assistant | Saved AI Notes for ${actor.name}`);
                 } catch (err) {
-                    console.error(`PF2e Arena AI | Error saving AI Notes flag:`, err);
+                    console.error(`PF2e AI Combat Assistant | Error saving AI Notes flag:`, err);
                 }
             });
 
@@ -5944,7 +6008,7 @@ Hooks.once('ready', () => {
             // Sometimes adding content requires telling the sheet to recalculate its position/height
             // sheet.setPosition(); // Uncomment if the sheet layout seems off after adding the field
         } else {
-            console.warn(`PF2e Arena AI | Could not find biography tab (.tab[data-tab="biography"]) in CharacterSheetPF2e to add AI Notes.`); // DEBUG LOG 4 (modified)
+            console.warn(`PF2e AI Combat Assistant | Could not find biography tab (.tab[data-tab="biography"]) in CharacterSheetPF2e to add AI Notes.`); // DEBUG LOG 4 (modified)
         }
     });
 // Function to open the AI Notes editing dialog
@@ -5973,10 +6037,10 @@ async function openAINotesDialog(actor) {
                     const newNotes = html.find('textarea[name="aiNotes"]').val();
                     try {
                         await actor.setFlag(MODULE_ID, FLAG_KEY, newNotes);
-                        console.log(`PF2e Arena AI | Saved AI Notes for ${actor.name} via dialog.`);
+                        console.log(`PF2e AI Combat Assistant | Saved AI Notes for ${actor.name} via dialog.`);
                         ui.notifications.info(`AI Notes saved for ${actor.name}.`);
                     } catch (err) {
-                        console.error(`PF2e Arena AI | Error saving AI Notes flag via dialog:`, err);
+                        console.error(`PF2e AI Combat Assistant | Error saving AI Notes flag via dialog:`, err);
                         ui.notifications.error(`Error saving AI Notes for ${actor.name}.`);
                     }
                 }
@@ -6009,13 +6073,13 @@ async function openAINotesDialog(actor) {
                 openAINotesDialog(sheet.actor);
             }
         });
-        console.log(`PF2e Arena AI | Added AI Notes button to header for ${sheet.actor.name}`); // DEBUG
+        console.log(`PF2e AI Combat Assistant | Added AI Notes button to header for ${sheet.actor.name}`); // DEBUG
     });
 
     // Add button listeners to chat messages (assuming this setup happens elsewhere)
     // Example: Hooks.on('renderChatMessage', addActionButtons);
 
-    console.log("PF2e Arena AI | Initialization Complete.");
+    console.log("PF2e AI Combat Assistant | Initialization Complete.");
 });
 
 
