@@ -31,6 +31,7 @@ Designed for **GMs who want smarter, faster combat** or for **players who want g
 - Foundry VTT **v12+**
 - Pathfinder Second Edition (PF2e) game system installed
 - An API key for a supported LLM provider (e.g. OpenAI)
+- **Sufficient Token Context:** The module requires a model with a context window of at least **~7,000-8,000 tokens** to process the full combat state effectively. Many local LLM setups default to smaller windows (e.g., 4096 tokens), which may lead to errors or incomplete suggestions. Ensure your LLM configuration meets this requirement.
 
 ---
 
@@ -167,6 +168,12 @@ You can provide extra context (e.g. resistances, tactics, special terrain) via n
 For PCs, click **AI Notes** on their sheet to define behavior that is always applied—great for describing combat roles or special tactics.
 
 ![Permanent AI notes](media/permanent-notes.png)
+
+---
+
+## 🛠️ Troubleshooting
+
+- **Errors with Local LLMs:** If you encounter errors, especially when using local LLMs (e.g., via LM Studio), first check that your model's **context window** meets the minimum requirement (see Requirements section). Errors might currently only be visible in your browser's **developer console (F12)**. Improved error logging to a file is being considered for future updates.
 
 ---
 

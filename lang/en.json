@@ -1,1 +1,68 @@
-{}
+{
+    "pf2e-ai-combat-assistant": {
+        "settings": {
+            "apiKey": {
+                "name": "LLM API Key",
+                "hint": "Required API key for the LLM service (e.g., OpenAI). Keep this secret!"
+            },
+            "llmEndpoint": {
+                "name": "LLM API Endpoint URL",
+                "hint": "URL for the chat completion API (e.g., OpenAI, local endpoint)."
+            },
+            "aiModel": {
+                "name": "LLM Model Name",
+                "hint": "The specific model identifier to use (e.g., gpt-4o, gpt-3.5-turbo, local model ID)."
+            },
+            "showOfferToPlayers": {
+                "name": "Show AI Offer/Suggestions to Players?",
+                "hint": "If checked, players who own the current actor (or all players if no owner) will see the AI turn offer and suggestion messages. If unchecked, only the GM sees these messages."
+            },
+            "includeReactionsInPrompt": {
+                "name": "Include Reactions in Prompt",
+                "hint": "Include Reaction abilities in the list sent to the AI for consideration."
+            },
+            "whisperTurnSummary": {
+                "name": "Whisper Turn Summary to GM Only",
+                "hint": "If checked, the end-of-turn summary message will only be visible to the GM. If unchecked, it will be sent publicly."
+            }
+        },
+        "chat": {
+            "turnOfferTitle": "{actorName}'s Turn: AI Control?",
+            "turnOfferContent": "Allow the AI to control this turn?",
+            "acceptButton": "Accept",
+            "declineButton": "Decline",
+            "skipTurnButton": "Skip Turn (Manual)",
+            "aiThinking": "AI is thinking...",
+            "aiProcessing": "AI is processing...",
+            "suggestionTitle": "AI Suggestion for {actorName}",
+            "confirmButton": "Confirm Action",
+            "skipActionButton": "Skip Suggestion",
+            "endTurnButton": "End Turn",
+            "retryTurnButton": "Retry Full Turn",
+            "turnSummaryTitle": "{actorName}'s Turn Complete",
+            "turnSummaryIntent": "Intended Actions:",
+            "turnSummaryEvents": "Recorded Events (GM Only)",
+            "turnSummaryNoEvents": "No significant events recorded.",
+            "nextTurnButton": "Next Turn",
+            "manualMAPAdjust": "Adjust MAP:",
+            "manualNotesLabel": "Manual Notes for AI:",
+            "manualNotesPlaceholder": "Enter any specific instructions or context...",
+            "castSpellButton": "Cast Spell",
+            "executeStrikeButton": "Execute Strike",
+            "applyConditionReduction": "Apply Condition Reduction",
+            "aiNotesDialogTitle": "AI Permanent Notes for {actorName}",
+            "aiNotesDialogLabel": "Enter notes for the AI to remember about this character's tactics, personality, or goals:",
+            "aiNotesDialogSave": "Save Notes",
+            "aiNotesDialogCancel": "Cancel",
+            "aiNotesButtonTooltip": "Edit AI Permanent Notes"
+        },
+        "combat": {
+            "designateTitle": "Assign Designations",
+            "designateInstructions": "Click tokens to toggle friendly (green) / enemy (red) status for the AI.",
+            "designateConfirm": "Confirm Designations",
+            "designateSingleFriendly": "Mark Friendly",
+            "designateSingleEnemy": "Mark Enemy",
+            "designateSingleNeutral": "Mark Neutral"
+        }
+    }
+}
