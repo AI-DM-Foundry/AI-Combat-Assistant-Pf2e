@@ -3338,32 +3338,63 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
             };
         });
 
-    // ADDED SAFETY CHECK for relation error
-    const allies = []; const enemies = [];
+    // --- Categorize Combatants by Status and Relation ---
+    const aliveAllies = [];
+    const downedAllies = [];
+    const aliveEnemies = [];
+    const deadEnemies = [];
+
     otherCombatantsInfoRaw.forEach(info => {
         if (!info) {
             console.warn("AI GatherState: Skipping invalid combatant entry in otherCombatantsInfoRaw.");
             return;
         }
+
         if (info.relation === 'friendly') {
-            allies.push(info); // Always include allies, even if defeated
-        } else if (info.relation === 'enemy' && !info.defeated) { // Only include enemies if they are NOT defeated
-            enemies.push(info);
-        } else if (info.relation !== 'friendly' && info.defeated) {
-            // Optionally log or handle defeated enemies if needed, but don't add them to the list for the prompt
-            // console.log(`AI GatherState: Skipping defeated enemy: ${info.name}`); // DEBUG
-        } else { // Handle missing/invalid relation (defaulting to enemy, but only if not defeated)
-            // console.warn(`AI GatherState: Combatant ${info.name || info.id} has missing/invalid relation. Defaulting to enemy.`); // DEBUG
-            if (!info.defeated) {
-                enemies.push(info);
+            if (info.defeated) {
+                downedAllies.push(info);
+            } else {
+                aliveAllies.push(info);
+            }
+        } else { // Default to enemy if relation is not 'friendly'
+            // Explicitly check HP percentage in addition to the defeated flag
+            if (info.defeated || info.hpPercent === 0) { // Consider 0% HP as defeated/dead
+                deadEnemies.push(info);
+            } else {
+                aliveEnemies.push(info);
             }
         }
     });
-    // END SAFETY CHECK
+    // --- End Categorization ---
 
-    allies.sort((a, b) => a.numericDistance - b.numericDistance);
-    enemies.sort((a, b) => a.numericDistance - b.numericDistance);
-    let closestEnemyDistance = null; const firstVisibleEnemy = enemies.find(e => !e.defeated && e.numericDistance !== Infinity); if (firstVisibleEnemy) closestEnemyDistance = firstVisibleEnemy.numericDistance;
+    // Sort each list by distance
+    aliveAllies.sort((a, b) => a.numericDistance - b.numericDistance);
+    downedAllies.sort((a, b) => a.numericDistance - b.numericDistance);
+    aliveEnemies.sort((a, b) => a.numericDistance - b.numericDistance);
+    deadEnemies.sort((a, b) => a.numericDistance - b.numericDistance);
+
+    // --- Add Unique Suffixes to Duplicate *Alive* Enemy Names ---
+    const aliveEnemyNameCounts = {};
+    const aliveEnemyNameSuffixCounters = {};
+    aliveEnemies.forEach(enemy => {
+        aliveEnemyNameCounts[enemy.name] = (aliveEnemyNameCounts[enemy.name] || 0) + 1;
+    });
+
+    aliveEnemies.forEach(enemy => {
+        if (aliveEnemyNameCounts[enemy.name] > 1) {
+            const counter = (aliveEnemyNameSuffixCounters[enemy.name] || 0);
+            enemy.promptName = `${enemy.name} [${String.fromCharCode(65 + counter)}]`; // Assign A, B, C...
+            aliveEnemyNameSuffixCounters[enemy.name] = counter + 1;
+        } else {
+            enemy.promptName = enemy.name; // Use original name if not a duplicate
+        }
+    });
+    // --- End Suffix Logic ---
+
+    // Calculate closest *alive* enemy distance
+    let closestEnemyDistance = null;
+    const firstVisibleAliveEnemy = aliveEnemies.find(e => e.numericDistance !== Infinity);
+    if (firstVisibleAliveEnemy) closestEnemyDistance = firstVisibleAliveEnemy.numericDistance;
 
     // --- Self Info ---
     const permanentNotes = actor.getFlag(MODULE_ID, FLAGS.PERMANENT_NOTES) || ''; // Get permanent notes
@@ -4301,18 +4332,24 @@ if (!processedAsRegen) {
         hasVariableCostActions = true;
     }
 
+    // Update hasAllies flag based on *alive* allies
+    hasAllies = aliveAllies.length > 0;
+
     return {
-        currentTurnCombatantId: currentCombatant.id, scene: sceneInfo, allies: allies, enemies: enemies, closestEnemyDistance: closestEnemyDistance, self: selfInfo, recentEvents: recentEvents,
+        currentTurnCombatantId: currentCombatant.id, scene: sceneInfo,
+        aliveAllies: aliveAllies, downedAllies: downedAllies, // New lists
+        aliveEnemies: aliveEnemies, deadEnemies: deadEnemies, // New lists
+        closestEnemyDistance: closestEnemyDistance, self: selfInfo, recentEvents: recentEvents,
         // Flags for contextual prompts:
         hasStanceAction: hasStanceAction,
         hasFlourishAction: hasFlourishAction,
-        hasAllies: hasAllies,
+        hasAllies: hasAllies, // Updated based on aliveAllies
         canSustainSpells: canSustainSpells,
         hasHealSpell: hasHealSpell,
         hasGrabAttack: hasGrabAttack,
-        hasVariableCostActions: hasVariableCostActions, // Include this flag
-        hasLeveledSpells: hasLeveledSpells, // Include the new flag
-        hasFreeActions: hasFreeActions // Include the free action flag
+        hasVariableCostActions: hasVariableCostActions,
+        hasLeveledSpells: hasLeveledSpells,
+        hasFreeActions: hasFreeActions
     };
 } // End of gatherGameState function
 
@@ -4624,11 +4661,12 @@ function craftSingleActionPrompt(combatant, gameState, turnState, skippedAction 
     const consumablesString = createAbilityListString(filteredConsumables, 'Consumable', closestEnemyDist, gameState);
     const conditionsEffectsString = createAbilityListString(gameState.self.conditionsEffects, 'Condition/Effect', closestEnemyDist, gameState); // Pass gameState here too for consistency
 
-    const formatCombatantEntry = (c) => { let parts = [`${c.name} (${c.size || 'size?'})`]; parts.push(c.positionString); if (c.distance !== null) parts.push(`Distance: ${c.distance}`); if (c.hpPercent !== null) parts.push(`HP: ${c.hpPercent}%`); if (c.defeated) parts.push('[Defeated]'); if (c.conditionsEffects?.length > 0) { parts.push(`Cond/Effects: ${c.conditionsEffects.map(ce => { const name = ce.name; const value = ce.value; if (value !== null && !String(name).endsWith(` ${value}`)) { return `${name} ${value}`; } return name; }).join(', ')}`); } return `  - ${parts.join(' | ')}`; }; // Check if name already includes value before appending
-    const alliesFormatted = gameState.allies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
-    const enemiesFormatted = gameState.enemies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
-
-
+    const formatCombatantEntry = (c) => { let parts = [`${c.promptName || c.name} (${c.size || 'size?'})`]; parts.push(c.positionString); if (c.distance !== null) parts.push(`Distance: ${c.distance}`); if (c.hpPercent !== null) parts.push(`HP: ${c.hpPercent}%`); if (c.defeated) parts.push('[Defeated]'); if (c.conditionsEffects?.length > 0) { parts.push(`Cond/Effects: ${c.conditionsEffects.map(ce => { const name = ce.name; const value = ce.value; if (value !== null && !String(name).endsWith(` ${value}`)) { return `${name} ${value}`; } return name; }).join(', ')}`); } return `  - ${parts.join(' | ')}`; }; // Use promptName if available, fallback to name
+    // Format the four new lists
+    const aliveAlliesFormatted = gameState.aliveAllies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
+    const downedAlliesFormatted = gameState.downedAllies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
+    const aliveEnemiesFormatted = gameState.aliveEnemies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
+    const deadEnemiesFormatted = gameState.deadEnemies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
     const skipInstruction = skippedAction ? `\nIMPORTANT NOTE: You previously suggested "${skippedAction}". DO NOT suggest that action again this turn.` : "";
     const manualNotesSection = (manualNotes && manualNotes.trim() !== "") ? `\n**Manual Notes from Player/GM:** ${manualNotes.trim()}` : "";
 
@@ -4641,7 +4679,7 @@ function craftSingleActionPrompt(combatant, gameState, turnState, skippedAction 
         ? `\n- **Events Since Last Action (Chat Log):**\n${gameState.recentEvents.map(e => `    - ${e}`).join('\n')}` // Format recent chat events
         : "";
     console.log(`AI Debug Prompt: recentEventsString: ${recentEventsString || 'None'}`); // DEBUG
-    const closestEnemyInfo = closestEnemyDist !== null ? `**Closest Enemy: ${closestEnemyDist}ft**` : "**No Enemies Visible/Tracked**";
+    const closestEnemyInfo = closestEnemyDist !== null ? `**Closest ALIVE Enemy: ${closestEnemyDist}ft**` : "**No ALIVE Enemies Visible/Tracked**";
     // --- Check for Variable Cost Actions ---
     let hasVariableCostActions = false;
     const checkVariableCost = (item) => typeof item?.costValue === 'string' && item.costValue.includes(' to ');
@@ -4755,12 +4793,18 @@ ${interimResultsString}${recentEventsString}
 **Combat Situation (Round ${combat?.round ?? '?'})**
 
 ${closestEnemyInfo}
-
-- **Enemies in Combat (Closest First, Includes Defeated):**
-${enemiesFormatted}
-
-- **Allies in Combat (Closest First):**
-${alliesFormatted}
+${gameState.aliveEnemies?.length > 0 ? `
+- **ALIVE Enemies (Closest First):**
+${aliveEnemiesFormatted}` : ''}
+${gameState.aliveAllies?.length > 0 ? `
+- **ALIVE Allies (Closest First):**
+${aliveAlliesFormatted}` : ''}
+${gameState.downedAllies?.length > 0 ? `
+- **DOWNED Allies (Closest First):**
+${downedAlliesFormatted}` : ''}
+${gameState.deadEnemies?.length > 0 ? `
+- **DEAD Enemies (Closest First):**
+${deadEnemiesFormatted}` : ''}
 
 ${skipInstruction}
 ${manualNotesSection}
