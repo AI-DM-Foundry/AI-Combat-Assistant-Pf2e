@@ -1,9 +1,9 @@
 // PF2e AI Combat Assistant Module
-// Version: 2.7.4 (PC Bonus/Spec Fix, Stance Desc, NPC Mod Fix)
+// Version: 1.06 (Updated versioning)
 // ====================================================================
 
 // Log module loading
-console.log("PF2e AI Combat Assistant | Module Loading (v1.0)");
+console.log("PF2e AI Combat Assistant | Module Loading (v1.06)");
 
 // --- Constants ---
 
@@ -713,11 +713,34 @@ Hooks.on('updateCombat', async (combat, updateData, options, userId) => {
     // Generate a unique ID for this specific turn's offer to prevent duplicates
     const uniqueOfferId = `ai-offer-${combat.id}-${combat.round}-${combat.turn}`;
 
-    // Check if an offer message with this ID already exists
-    if (game.messages.some(message => message.flags?.[MODULE_ID]?.[FLAGS.OFFER_ID] === uniqueOfferId)) {
-        // console.log(`PF2e AI Combat Assistant | AI Offer for ${currentCombatant.name}'s turn already exists. Skipping.`); // DEBUG
-        return;
+    // --- MODIFICATION START: Clean up previous unactioned AI offers ---
+    const offerMessagesToDelete = [];
+    for (const message of game.messages) {
+        // Check if it's an AI offer message using the flag
+        if (message.flags?.[MODULE_ID]?.[FLAGS.OFFER_ID]) {
+            // Check if the buttons are still enabled (indicating it wasn't actioned)
+            // We need to parse the HTML content to check button state.
+            // This is a bit fragile, but necessary without storing state differently.
+            const contentHtml = $(`<div>${message.content}</div>`); // Wrap in div to parse
+            const acceptButton = contentHtml.find('button.ai-accept-control');
+            const declineButton = contentHtml.find('button.ai-decline-control');
+
+            // If buttons exist and *neither* is disabled, it's likely unactioned
+            if (acceptButton.length > 0 && declineButton.length > 0 && !acceptButton.prop('disabled') && !declineButton.prop('disabled')) {
+                offerMessagesToDelete.push(message.id);
+            }
+        }
     }
+
+    if (offerMessagesToDelete.length > 0) {
+        try {
+            console.log(`PF2e AI Combat Assistant | Deleting ${offerMessagesToDelete.length} previous unactioned AI offer messages.`); // DEBUG
+            await ChatMessage.deleteDocuments(offerMessagesToDelete);
+        } catch (deleteError) {
+            console.error(`PF2e AI Combat Assistant | Error deleting previous AI offer messages:`, deleteError);
+        }
+    }
+    // --- MODIFICATION END ---
 
     const offerContent = `
         <div style="border: 1px solid #ccc; padding: 5px; margin-top: 5px;">
@@ -6015,4 +6038,4 @@ async function openAINotesDialog(actor) {
 
 
 // Final log message update
-console.log("PF2e AI Combat Assistant | Module Loaded Successfully (v1.0)");
+console.log("PF2e AI Combat Assistant | Module Loaded Successfully (v1.06)");
