@@ -1,9 +1,9 @@
 // PF2e AI Combat Assistant Module
-// Version: 1.06 (Updated versioning)
+// Version: 1.07 (Updated versioning)
 // ====================================================================
 
 // Log module loading
-console.log("PF2e AI Combat Assistant | Module Loading (v1.06)");
+console.log("PF2e AI Combat Assistant | Module Loading (v1.07)");
 
 // --- Constants ---
 
@@ -2529,8 +2529,11 @@ if (turnState.actionsRemaining === 0) {
         }
 
         // --- Prepare Data for Buttons and Chat Message ---
-        // Construct the full string to be encoded, NOW including the narrative
+        // Construct the full string to be encoded, NOW including the narrative and target
         let fullDescriptionForEncoding = parsedSuggestion.description;
+        if (parsedSuggestion.target) { // Include target in encoded data if present
+            fullDescriptionForEncoding += ` | TARGET: ${parsedSuggestion.target}`;
+        }
         if (parsedSuggestion.rationale) {
             fullDescriptionForEncoding += ` | Rationale: ${parsedSuggestion.rationale}`;
         }
@@ -2557,7 +2560,7 @@ if (turnState.actionsRemaining === 0) {
         }
         let rationaleHTML = '';
         if (parsedSuggestion.rationale && parsedSuggestion.rationale.length > 0) {
-            rationaleHTML = `<p style="margin: 8px 0 0 0; padding-top: 5px; border-top: 1px dashed #ccc; font-size: 0.9em; font-style: italic;"><strong>Rationale:</strong> ${parsedSuggestion.rationale}</p>`;
+            rationaleHTML = `<p style="margin: 8px 0 0 0; padding-top: 5px; border-top: 1px dashed #ccc; font-size: 0.9em; font-style: italic;"><strong>Rationale:</strong> ${parsedSuggestion.rationale.replace(/ \[ID:\s*[^\]]+\]/ig, '')}</p>`;
         }
 
         // --- MAP Adjustment Controls ---
@@ -2590,9 +2593,124 @@ if (turnState.actionsRemaining === 0) {
         // Use the turnState determined at the start of the function (which is now potentially the passed-in updated state)
         const currentTurnStateForDisplay = turnState;
 
+        // --- Rationale Target Extraction (Fallback) ---
+        let effectiveTargetString = parsedSuggestion.target;
+        try {
+            // If no explicit target is set, try to extract one from the rationale
+            if ((!effectiveTargetString || effectiveTargetString.toLowerCase() === 'none') &&
+                parsedSuggestion.rationale) {
+                // Regex to find the first instance of 'Name [ID: ...]' in the rationale
+                const rationaleMatch = parsedSuggestion.rationale.match(/([a-zA-Z\s\(\)-]+ \[ID:\s*[^\]]+\])/i);
+                if (rationaleMatch && rationaleMatch[1]) {
+                    effectiveTargetString = rationaleMatch[1].trim();
+                    console.log(`PF2e AI Combat Assistant | Auto-Targeting: Using target \"${effectiveTargetString}\" extracted from rationale as fallback.`);
+                }
+            }
+        } catch (strideTargetError) {
+            console.error("PF2e AI Combat Assistant | Error during rationale target extraction:", strideTargetError);
+        }
+        // --- End Stride Target Extraction ---
+
+        // --- Auto-Targeting Logic (Using Token ID) ---
+        let targetToken = null;
+        // Use effectiveTargetString which might have been updated by the Stride logic above
+        const ignoreTargets = ['self', 'none', 'area', 'emanation', 'cone', 'line', 'burst']; // Keywords to ignore for token targeting
+
+        if (effectiveTargetString) { // Check if effectiveTargetString exists first
+            const idMatch = effectiveTargetString.match(/\[ID:\s*([^\]]+)\]/i);
+            const targetTokenId = idMatch?.[1]?.trim();
+            let foundToken = false; // Flag to track if we successfully targeted a token
+            let attemptNameLookup = false; // Flag to indicate if we should try name lookup
+
+            if (targetTokenId) { // --- Step 1: Attempt ID Lookup ---
+                if (targetTokenId.toLowerCase() === 'tokenid' || targetTokenId.toLowerCase() === 'actual_token_id') {
+                    console.warn(`PF2e AI Combat Assistant | Auto-Targeting: LLM returned placeholder ID ("${targetTokenId}") instead of actual ID for target string: "${effectiveTargetString}". Skipping targeting.`);
+                    // Don't attempt name lookup if it's explicitly a placeholder
+                } else {
+                    targetToken = canvas.tokens.get(targetTokenId); // Use canvas.tokens.get() for ID lookup
+                    if (targetToken && targetToken.actor && !targetToken.actor.isDefeated) {
+                        console.log(`PF2e AI Combat Assistant | Auto-Targeting: Found token "${targetToken.name}" (ID: ${targetToken.id}) matching suggested target ID "${targetTokenId}" (from string "${effectiveTargetString}").`);
+                        // Explicitly untarget existing targets
+                        for (let target of game.user.targets) {
+                            target.setTarget(false, { user: game.user, releaseOthers: false });
+                        }
+                        // Set the new target
+                        targetToken.setTarget(true, { user: game.user, releaseOthers: false }); // releaseOthers might be redundant now, set to false
+                        foundToken = true;
+                    } else {
+                        // ID lookup failed (token not found, defeated, or invalid ID like coords)
+                        console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Could not find valid token with ID "${targetTokenId}" on the canvas (from string "${effectiveTargetString}"). Attempting name lookup as fallback.`);
+                        attemptNameLookup = true; // Fallback to name lookup
+                    }
+                }
+            } else {
+                // No ID pattern found in the string
+                attemptNameLookup = true; // Try name lookup unless it's an ignore keyword
+            }
+
+            // --- Step 2: Attempt Name Lookup (Fallback) ---
+            const containsIgnoreKeyword = ignoreTargets.some(keyword => effectiveTargetString.toLowerCase().includes(keyword));
+
+            // Attempt name lookup if:
+            // 1. ID lookup failed (attemptNameLookup = true)
+            // 2. OR No ID was present initially (attemptNameLookup = true)
+            // AND only if it's not an explicitly ignored keyword type UNLESS an ID was present but failed
+            if (attemptNameLookup && (!containsIgnoreKeyword || targetTokenId)) {
+                // Extract name (e.g., everything before "[ID:" or "(" )
+                const nameMatch = effectiveTargetString.match(/^([^\[\(]+)/);
+                const extractedName = nameMatch?.[1]?.trim();
+
+                if (extractedName) {
+                    const matchingTokens = canvas.tokens.placeables.filter(
+                        t => t.name.toLowerCase() === extractedName.toLowerCase() && t.actor && !t.actor.isDefeated
+                    );
+
+                    if (matchingTokens.length === 1) {
+                        targetToken = matchingTokens[0];
+                        console.log(`PF2e AI Combat Assistant | Auto-Targeting: Found unique token by name "${extractedName}" (ID: ${targetToken.id}) after ID lookup failed or ID was missing.`);
+                        // Explicitly untarget existing targets
+                        for (let target of game.user.targets) {
+                            target.setTarget(false, { user: game.user, releaseOthers: false });
+                        }
+                        // Set the new target
+                        targetToken.setTarget(true, { user: game.user, releaseOthers: false }); // releaseOthers might be redundant now, set to false
+                        foundToken = true;
+                    } else if (matchingTokens.length > 1) {
+                        console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Found multiple non-defeated tokens named "${extractedName}". Skipping targeting due to ambiguity.`);
+                    } else {
+                        // Name lookup failed
+                        if (!targetTokenId) { // Only log this specific message if no ID was ever present
+                             console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Could not parse Token ID and failed to find unique token by name "${extractedName}" from string: "${effectiveTargetString}".`);
+                        } else {
+                             // Already logged ID failure, now log name failure
+                             console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Also failed to find unique token by name "${extractedName}" from string: "${effectiveTargetString}".`);
+                        }
+                    }
+                } else {
+                     console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Could not extract a name to search for from target string: "${effectiveTargetString}".`);
+                }
+            }
+
+            // --- Step 3: Final Logging for Skipped Cases ---
+            if (!foundToken && containsIgnoreKeyword && !targetTokenId) {
+                 // Skipped because: No ID found AND contains ignore keyword AND name lookup didn't succeed
+                 console.log(`PF2e AI Combat Assistant | Auto-Targeting: Skipping targeting for target string "${effectiveTargetString}" (No valid ID found, contains ignore keyword, and name lookup failed or wasn't applicable).`);
+            } else if (!foundToken && !targetTokenId && !containsIgnoreKeyword && !attemptNameLookup) {
+                 // This case should ideally not be hit with the new logic, but as a fallback:
+                 // No ID, not an ignore word, but name lookup wasn't attempted (e.g., couldn't extract name)
+                 console.warn(`PF2e AI Combat Assistant | Auto-Targeting: Failed to target based on string "${targetString}". Could not parse ID or find unique token by name.`);
+            }
+
+        } else {
+            // If targetString itself is null/empty
+            console.log(`PF2e AI Combat Assistant | Auto-Targeting: Skipping targeting because target string is empty.`);
+        }
+        // --- End Auto-Targeting Logic ---
+
+
         const finalContent = `
              <div style="margin-bottom: 5px;">
-                 ${actionIconsHTML} <strong>${parsedSuggestion.description}</strong>
+                 ${actionIconsHTML} <strong>${parsedSuggestion.description}</strong> ${effectiveTargetString ? `<i>(Target: ${effectiveTargetString.replace(/ \[ID:\s*[^\]]+\]/i, '')})</i>` : ''}
                  <div class="ai-action-counter" style="font-size: 0.9em; color: #666; margin-top: 2px;">(${currentTurnStateForDisplay.actionsRemaining} actions remaining this turn)</div>
                  ${(() => {
                      const stunnedVal = currentTurnStateForDisplay.stunnedValueAtStart ?? 0;
@@ -3263,7 +3381,28 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
         .filter(c => c.id !== currentCombatant.id && c.actor)
         .map(otherCombatant => {
             const otherActor = otherCombatant.actor;
-            const otherCanvasToken = canvas.tokens.get(otherCombatant.tokenId);
+            // +++ START DEBUG LOGGING & ID CHECK +++
+            const combatantTokenId = otherCombatant.tokenId; // Get ID first
+            console.log(`AI GatherState | Processing Other Combatant: Name=${otherCombatant.name}, ID=${otherCombatant.id}, TokenID=${combatantTokenId}`);
+            if (!combatantTokenId) { // Check if the combatant data itself is missing the token ID
+                console.warn(`AI GatherState | Skipping combatant ${otherCombatant.name} - Missing tokenId on Combatant document!`);
+                return null; // Skip this combatant if ID is missing from the source
+            }
+            // +++ END DEBUG LOGGING & ID CHECK +++
+            const otherCanvasToken = canvas.tokens.get(combatantTokenId); // Use the validated ID
+            // +++ START DEBUG LOGGING +++
+            if (!otherCanvasToken) {
+                console.warn(`AI GatherState | Token NOT FOUND on canvas for ${otherCombatant.name} using ID: ${combatantTokenId}`);
+            } else {
+                 console.log(`AI GatherState | Token FOUND on canvas for ${otherCombatant.name} using ID: ${otherCombatant.tokenId}. Token Object:`, otherCanvasToken);
+            }
+            // +++ END DEBUG LOGGING +++
+            // <<< NEW: Check if token exists on canvas >>>
+            if (!otherCanvasToken) {
+                console.warn(`AI GatherState: Skipping combatant ${otherCombatant.name} - Token not found on canvas (ID: ${otherCombatant.tokenId})`);
+                return null; // Skip this combatant if token isn't on canvas
+            }
+            // <<< END NEW >>>
             const otherTokenCenter = otherCanvasToken?.center;
             const otherCoordinates = otherCanvasToken ? { x: Math.round(otherCanvasToken.x), y: Math.round(otherCanvasToken.y) } : null;
             let canSee = false; let distanceString = null; let numericDistance = Infinity; let positionString = 'Unknown Position';
@@ -3346,8 +3485,12 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
             // Get size only if visible
             const size = canSee ? (otherActor?.size || '?') : null;
 
+            // --- Get Token ID ---
+            const otherTokenId = otherCanvasToken?.id || null; // Get the token ID
+
             return {
                 id: otherCombatant.id,
+                tokenId: otherTokenId, // <<< ADDED tokenId
                 name: otherCombatant.name || 'Unknown',
                 relation: relation,
                 positionString: positionString,
@@ -3359,7 +3502,8 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
                 conditionsEffects: targetConditionsEffects, // Will be empty if not visible
                 size: size // Will be null if not visible
             };
-        });
+        })
+        .filter(info => info !== null); // <<< NEW: Filter out null entries >>>
 
     // --- Categorize Combatants by Status and Relation ---
     const aliveAllies = [];
@@ -3396,23 +3540,23 @@ const followUpAction = isComboSetup ? comboSetupMatch[1].trim() : null;
     aliveEnemies.sort((a, b) => a.numericDistance - b.numericDistance);
     deadEnemies.sort((a, b) => a.numericDistance - b.numericDistance);
 
-    // --- Add Unique Suffixes to Duplicate *Alive* Enemy Names ---
-    const aliveEnemyNameCounts = {};
-    const aliveEnemyNameSuffixCounters = {};
-    aliveEnemies.forEach(enemy => {
-        aliveEnemyNameCounts[enemy.name] = (aliveEnemyNameCounts[enemy.name] || 0) + 1;
-    });
-
-    aliveEnemies.forEach(enemy => {
-        if (aliveEnemyNameCounts[enemy.name] > 1) {
-            const counter = (aliveEnemyNameSuffixCounters[enemy.name] || 0);
-            enemy.promptName = `${enemy.name} [${String.fromCharCode(65 + counter)}]`; // Assign A, B, C...
-            aliveEnemyNameSuffixCounters[enemy.name] = counter + 1;
-        } else {
-            enemy.promptName = enemy.name; // Use original name if not a duplicate
-        }
-    });
-    // --- End Suffix Logic ---
+    // --- REMOVED Unique Suffix Logic ---
+    // const aliveEnemyNameCounts = {};
+    // const aliveEnemyNameSuffixCounters = {};
+    // aliveEnemies.forEach(enemy => {
+    //     aliveEnemyNameCounts[enemy.name] = (aliveEnemyNameCounts[enemy.name] || 0) + 1;
+    // });
+    //
+    // aliveEnemies.forEach(enemy => {
+    //     if (aliveEnemyNameCounts[enemy.name] > 1) {
+    //         const counter = (aliveEnemyNameSuffixCounters[enemy.name] || 0);
+    //         enemy.promptName = `${enemy.name} [${String.fromCharCode(65 + counter)}]`; // Assign A, B, C...
+    //         aliveEnemyNameSuffixCounters[enemy.name] = counter + 1;
+    //     } else {
+    //         enemy.promptName = enemy.name; // Use original name if not a duplicate
+    //     }
+    // });
+    // --- End Suffix Logic Removal ---
 
     // Calculate closest *alive* enemy distance
     let closestEnemyDistance = null;
@@ -4684,7 +4828,7 @@ function craftSingleActionPrompt(combatant, gameState, turnState, skippedAction 
     const consumablesString = createAbilityListString(filteredConsumables, 'Consumable', closestEnemyDist, gameState);
     const conditionsEffectsString = createAbilityListString(gameState.self.conditionsEffects, 'Condition/Effect', closestEnemyDist, gameState); // Pass gameState here too for consistency
 
-    const formatCombatantEntry = (c) => { let parts = [`${c.promptName || c.name} (${c.size || 'size?'})`]; parts.push(c.positionString); if (c.distance !== null) parts.push(`Distance: ${c.distance}`); if (c.hpPercent !== null) parts.push(`HP: ${c.hpPercent}%`); if (c.defeated) parts.push('[Defeated]'); if (c.conditionsEffects?.length > 0) { parts.push(`Cond/Effects: ${c.conditionsEffects.map(ce => { const name = ce.name; const value = ce.value; if (value !== null && !String(name).endsWith(` ${value}`)) { return `${name} ${value}`; } return name; }).join(', ')}`); } return `  - ${parts.join(' | ')}`; }; // Use promptName if available, fallback to name
+    const formatCombatantEntry = (c) => { let parts = [`${c.name} [ID: ${c.tokenId}] (${c.size || 'size?'})`]; parts.push(c.positionString); if (c.distance !== null) parts.push(`Distance: ${c.distance}`); if (c.hpPercent !== null) parts.push(`HP: ${c.hpPercent}%`); if (c.defeated) parts.push('[Defeated]'); if (c.conditionsEffects?.length > 0) { parts.push(`Cond/Effects: ${c.conditionsEffects.map(ce => { const name = ce.name; const value = ce.value; if (value !== null && !String(name).endsWith(` ${value}`)) { return `${name} ${value}`; } return name; }).join(', ')}`); } return `  - ${parts.join(' | ')}`; }; // Include TokenID in the name string
     // Format the four new lists
     const aliveAlliesFormatted = gameState.aliveAllies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
     const downedAlliesFormatted = gameState.downedAllies?.map(formatCombatantEntry).join('\n') || EMPTY_LIST_PLACEHOLDER;
@@ -4839,7 +4983,7 @@ ${turnState.actionsLostToStunnedAtStart > 0 ? `    - **Stunned Reduction:** You 
 - **Requirements:** Action/Feat **(Requires: ...)** text MUST be met NOW.
 - **Conditions/Effects:** Check carefully for restrictions or opportunities.
 - **Passive Abilities:** Context ONLY. Do NOT suggest activating unless also in Actions list.
-- **Targeting:** Use names from lists or relative directions. DO NOT use coordinates in ACTION line.
+- **Targeting:** Use the exact format \`Name \[ID: actual_token_id]\` from the lists below, replacing \`actual_token_id\` with the specific ID provided (e.g., \`Goblin Warrior \[ID: aBcDeF12345]\`). **CRITICAL: DO NOT use the literal strings "tokenId" or "actual_token_id" in the output.** DO NOT use coordinates. For areas, describe them (e.g., \`10-foot emanation centered on Self\`). Use \`Self\` or \`None\` if applicable.
 // Removed Spell Ranks/Levels block from here - moved to contextualInfo
 **Available Resources & Abilities (Sorted by Descending Range):**
     `); 
@@ -4887,12 +5031,14 @@ ${turnState.actionsLostToStunnedAtStart > 0 ? `    - **Stunned Reduction:** You 
 
  **Task:** Describe the single NEXT best action or combo for ${actor.name} to take. Be specific about the action and the target(s). Use combo format if applicable. **If suggesting a Leveled Spell with rank choices, INCLUDE the chosen Rank.** **If suggesting a variable-cost action (like Heal), INCLUDE the chosen number of actions (e.g., "(2 actions)").** Also provide a brief, flavorful narrative summary of the action.
  **Output Format (Strict):**
- ACTION: [Action Name OR FreeAction + MainAction (FinalCost) OR Action Name (X actions) OR Spell Name (Rank X, Y actions)], [Target Name/Relative Direction/Self/Area Description]
+ ACTION: [Action Name OR FreeAction + MainAction OR Action Name (X actions) OR Spell Name (Rank X, Y actions)]
+ TARGET: [Target Name \[ID: actual_token_id] (Use exact format from lists, replace actual_token_id, DO NOT use the literal placeholder string), OR Self, OR Area Description (e.g., 10-foot emanation centered on Self), OR None]
  COST: [Number (1, 2, or 3), R, or F reflecting the FINAL cost of the main action in a combo OR the chosen number of actions for a variable action]
  Rationale: [Brief explanation. CRITICAL: If moving, state why. If attacking, check range/reach. If combo, explain it & cost reduction & Frequency check. Mention key conditions/rules considered. **If Spell with rank choice: Justify chosen Rank/Level.** **If Variable Cost action: Justify chosen number of actions (1, 2, or 3).** **If action uses a Strike (e.g., Flurry of Blows): Justify the chosen Strike (e.g., "Using Tiger Claw (Stance Strike) for higher damage").**]
  NARRATIVE: [A short, engaging, action-packed sentence describing the action being taken.]
 
 ACTION:
+TARGET:
 COST:
 Rationale:
 NARRATIVE:`); // End of last push
@@ -5013,19 +5159,22 @@ function parseLLMSuggestion(responseString) {
     let parsedCost = null;
     let parsedRationale = null;
     let parsedNarrative = null; // Added for narrative
+    let parsedTarget = null; // Added for target
 
     // Trim leading/trailing whitespace and potential leading hyphens
     responseString = responseString.trim().replace(/^-\s*/, '');
 
     // Regex to capture ACTION, COST, Rationale, and NARRATIVE, allowing for optional markdown and flexible order
-    const actionMatch = responseString.match(/(?:^|\n)\s*\**ACTION:\**\s*(.*?)(?=\s*\n\s*\**(?:COST:|Rationale:|NARRATIVE:)|$)/is);
+    const actionMatch = responseString.match(/(?:^|\n)\s*\**ACTION:\**\s*(.*?)(?=\s*\n\s*\**(?:TARGET:|COST:|Rationale:|NARRATIVE:)|$)/is);
+    const targetMatch = responseString.match(/(?:^|\n)\s*\**TARGET:\**\s*(.*?)(?=\s*\n\s*\**(?:COST:|Rationale:|NARRATIVE:)|$)/is); // Added for target
     const costMatch = responseString.match(/(?:^|\n)\s*\**COST:\**\s*(\d+|R|F)(?:\s*action[s]?)?/i);
-    const rationaleMatch = responseString.match(/(?:^|\n)\s*\**Rationale:\**\s*(.*?)(?=\s*\n\s*\**(?:ACTION:|COST:|NARRATIVE:)|$)/is);
+    const rationaleMatch = responseString.match(/(?:^|\n)\s*\**Rationale:\**\s*(.*?)(?=\s*\n\s*\**(?:ACTION:|TARGET:|COST:|NARRATIVE:)|$)/is);
     const narrativeMatch = responseString.match(/(?:^|\n)\s*\**NARRATIVE:\**\s*(.*)/is); // Capture narrative
 
     // --- Primary Parsing Strategy (Using Regex) ---
-    if (actionMatch?.[1] && costMatch?.[1]) {
+    if (actionMatch?.[1] && targetMatch?.[1] && costMatch?.[1]) { // Require TARGET now
         parsedAction = actionMatch[1].trim();
+        parsedTarget = targetMatch[1].trim(); // Parse target
         const costString = costMatch[1].toUpperCase();
         if (costString === 'R' || costString === 'F') {
             parsedCost = costString;
@@ -5039,12 +5188,14 @@ function parseLLMSuggestion(responseString) {
         parsedNarrative = narrativeMatch?.[1]?.trim() || null; // Parse narrative
 
         // Clean up potential cross-contamination if regex didn't perfectly separate
-        if (parsedAction && parsedCost !== null) {
-            parsedAction = parsedAction.replace(/\**COST:.*$/i, '').replace(/\**Rationale:.*$/i, '').replace(/\**NARRATIVE:.*$/i, '').trim();
-            if (parsedRationale) parsedRationale = parsedRationale.replace(/\**ACTION:.*$/i, '').replace(/\**COST:.*$/i, '').replace(/\**NARRATIVE:.*$/i, '').trim();
-            if (parsedNarrative) parsedNarrative = parsedNarrative.replace(/\**ACTION:.*$/i, '').replace(/\**COST:.*$/i, '').replace(/\**Rationale:.*$/i, '').trim();
+        if (parsedAction && parsedTarget && parsedCost !== null) {
+            // Clean up potential cross-contamination
+            parsedAction = parsedAction.replace(/\**TARGET:.*$/i, '').replace(/\**COST:.*$/i, '').replace(/\**Rationale:.*$/i, '').replace(/\**NARRATIVE:.*$/i, '').trim();
+            parsedTarget = parsedTarget.replace(/\**COST:.*$/i, '').replace(/\**Rationale:.*$/i, '').replace(/\**NARRATIVE:.*$/i, '').trim();
+            if (parsedRationale) parsedRationale = parsedRationale.replace(/\**ACTION:.*$/i, '').replace(/\**TARGET:.*$/i, '').replace(/\**COST:.*$/i, '').replace(/\**NARRATIVE:.*$/i, '').trim();
+            if (parsedNarrative) parsedNarrative = parsedNarrative.replace(/\**ACTION:.*$/i, '').replace(/\**TARGET:.*$/i, '').replace(/\**COST:.*$/i, '').replace(/\**Rationale:.*$/i, '').trim();
 
-            return { description: parsedAction, cost: parsedCost, rationale: parsedRationale, narrative: parsedNarrative }; // Return narrative
+            return { description: parsedAction, target: parsedTarget, cost: parsedCost, rationale: parsedRationale, narrative: parsedNarrative }; // Return target and narrative
         }
     }
 
@@ -5055,15 +5206,18 @@ function parseLLMSuggestion(responseString) {
     let potentialCost = null;
     let potentialRationale = null;
     let potentialNarrative = null; // Added for narrative
+    let potentialTarget = null; // Added for target
 
     for (const line of lines) {
         const trimmedLine = line.trim();
         const actionLineMatch = trimmedLine.match(/^\**ACTION:\**\s*(.*)/i);
+        const targetLineMatch = trimmedLine.match(/^\**TARGET:\**\s*(.*)/i); // Added for target
         const costLineMatch = trimmedLine.match(/^\**COST:\**\s*(\d+|R|F)(?:\s*action[s]?)?/i);
         const rationaleLineMatch = trimmedLine.match(/^\**Rationale:\**\s*(.*)/i);
         const narrativeLineMatch = trimmedLine.match(/^\**NARRATIVE:\**\s*(.*)/i); // Added for narrative
 
         if (actionLineMatch?.[1] && !potentialAction) potentialAction = actionLineMatch[1].trim();
+        if (targetLineMatch?.[1] && !potentialTarget) potentialTarget = targetLineMatch[1].trim(); // Added for target
         if (costLineMatch?.[1] && potentialCost === null) {
             const costStr = costLineMatch[1].toUpperCase();
             if (costStr === 'R' || costStr === 'F') potentialCost = costStr;
@@ -5073,15 +5227,15 @@ function parseLLMSuggestion(responseString) {
         if (narrativeLineMatch?.[1] && !potentialNarrative) potentialNarrative = narrativeLineMatch[1].trim(); // Added for narrative
     }
 
-    if (potentialAction && potentialCost !== null) {
+    if (potentialAction && potentialTarget && potentialCost !== null) { // Require target
         // Ensure narrative is at least an empty string if not found
         potentialNarrative = potentialNarrative || '';
-        return { description: potentialAction, cost: potentialCost, rationale: potentialRationale, narrative: potentialNarrative }; // Return narrative
-    } else if (potentialAction && potentialCost === null) {
+        return { description: potentialAction, target: potentialTarget, cost: potentialCost, rationale: potentialRationale, narrative: potentialNarrative }; // Return target and narrative
+    } else if (potentialAction && potentialTarget && potentialCost === null) { // Require target
         // If action found but cost is missing/invalid, default cost to 1
-        // console.warn(`AI Parse (Fallback): Parsed Action "${potentialAction}" but Cost missing/invalid. Defaulting cost to 1.`); // DEBUG
+        // console.warn(`AI Parse (Fallback): Parsed Action "${potentialAction}" and Target "${potentialTarget}" but Cost missing/invalid. Defaulting cost to 1.`); // DEBUG
         potentialNarrative = potentialNarrative || ''; // Ensure narrative is at least an empty string
-        return { description: potentialAction, cost: 1, rationale: potentialRationale, narrative: potentialNarrative }; // Return narrative
+        return { description: potentialAction, target: potentialTarget, cost: 1, rationale: potentialRationale, narrative: potentialNarrative }; // Return target and narrative
     }
 
     // --- Final Failure ---
@@ -6038,4 +6192,4 @@ async function openAINotesDialog(actor) {
 
 
 // Final log message update
-console.log("PF2e AI Combat Assistant | Module Loaded Successfully (v1.06)");
+console.log("PF2e AI Combat Assistant | Module Loaded Successfully (v1.07)");
