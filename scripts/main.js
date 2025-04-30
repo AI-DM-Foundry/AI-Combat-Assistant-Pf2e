@@ -5108,7 +5108,7 @@ async function callLLM(prompt, apiKey, endpoint, model = "gpt-4o") {
     try {
         const response = await fetch(endpoint, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-            body: JSON.stringify({ model: model, messages: [{ role: "user", content: prompt }], temperature: 0.6, max_tokens: 180, stop: null }) // Note: max_tokens might be low for some models/tasks
+            body: JSON.stringify({ model: model, messages: [{ role: "user", content: prompt }], temperature: 0.6, max_tokens: 180 }) // Note: max_tokens might be low for some models/tasks
         });
 
         if (!response.ok) {
